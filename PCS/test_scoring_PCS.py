@@ -1,4 +1,10 @@
 """Test file 1: Test data model and scoring function calculation."""
+import sys
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from models import Entity, Package, Component
 from llm_interface import LLMEvaluator
 from scoring import ScoringFunction

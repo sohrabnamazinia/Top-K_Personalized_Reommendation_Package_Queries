@@ -1,6 +1,12 @@
 """Test file 2: Test full AQA algorithm with logging."""
 import json
 from datetime import datetime
+import sys
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from models import Entity, Package, Component
 from llm_interface import LLMEvaluator
 from algorithm import AQAAlgorithm

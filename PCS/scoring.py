@@ -1,4 +1,10 @@
 from typing import Dict, List, Set
+import sys
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from models import Package, Component, Entity
 from llm_interface import LLMEvaluator
 
@@ -9,14 +15,13 @@ class ScoringFunction:
     def __init__(self, components: List[Component], llm_evaluator: LLMEvaluator):
         self.components = components
         self.llm_evaluator = llm_evaluator
-        self._component_cache: Dict[str, float] = {}
     
     def _get_component_value_key(self, component: Component, entity_ids: List[str], query: str) -> str:
         """Generate key for caching component values."""
         sorted_ids = tuple(sorted(entity_ids))
         return f"{component.name}:{sorted_ids}:{query}"
     
-    def get_component_value(
+    def probe_question(
         self,
         component: Component,
         entities: Dict[str, Entity],
@@ -24,18 +29,11 @@ class ScoringFunction:
         query: str,
         use_cache: bool = True
     ) -> float:
-        """Get component value (with caching)."""
-        key = self._get_component_value_key(component, entity_ids, query)
-        if use_cache and key in self._component_cache:
-            return self._component_cache[key]
-        
+        """Probe a question (component value). Caching is handled by LLM evaluator."""
+        # Get value from LLM evaluator (handles its own caching)
         value = self.llm_evaluator.evaluate_component(
             component, entities, entity_ids, query, use_cache
         )
-        
-        if use_cache:
-            self._component_cache[key] = value
-        
         return value
     
     def compute_package_score(
@@ -64,7 +62,7 @@ class ScoringFunction:
             if component.dimension == 1:
                 # Unary component: one value per entity
                 for entity_id in entity_list:
-                    value = self.get_component_value(
+                    value = self.probe_question(
                         component, entities, [entity_id], query, use_cache
                     )
                     total_score += value
@@ -72,7 +70,7 @@ class ScoringFunction:
                 # Binary component: one value per pair
                 for i in range(len(entity_list)):
                     for j in range(i + 1, len(entity_list)):
-                        value = self.get_component_value(
+                        value = self.probe_question(
                             component, entities, [entity_list[i], entity_list[j]], query, use_cache
                         )
                         total_score += value
@@ -99,7 +97,7 @@ class ScoringFunction:
             if component.dimension == 1:
                 # Unary: only if this is the entity
                 if entity_id in package.entities:
-                    value = self.get_component_value(
+                    value = self.probe_question(
                         component, entities, [entity_id], query, use_cache
                     )
                     contribution += value
@@ -108,7 +106,7 @@ class ScoringFunction:
                 for other_id in entity_list:
                     if other_id != entity_id:
                         sorted_pair = sorted([entity_id, other_id])
-                        value = self.get_component_value(
+                        value = self.probe_question(
                             component, entities, sorted_pair, query, use_cache
                         )
                         contribution += value

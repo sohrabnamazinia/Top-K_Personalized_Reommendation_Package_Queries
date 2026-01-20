@@ -1,8 +1,14 @@
 from typing import Dict, List, Tuple, Optional
 import numpy as np
+import sys
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from models import Package, Component, Entity
-from scoring import ScoringFunction
 from llm_interface import LLMEvaluator
+from scoring import ScoringFunction
 
 
 class AQAAlgorithm:
@@ -59,7 +65,7 @@ class AQAAlgorithm:
         for entity_id, entity in entities.items():
             score = 0.0
             for component in unary_components:
-                value = self.scoring_function.get_component_value(
+                value = self.scoring_function.probe_question(
                     component, entities, [entity_id], query, use_cache=True
                 )
                 score += value

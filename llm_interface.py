@@ -1,4 +1,5 @@
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+import random
 from langchain_openai import ChatOpenAI
 from langchain.prompts import ChatPromptTemplate
 from models import Component, Entity
@@ -7,25 +8,79 @@ from models import Component, Entity
 class LLMEvaluator:
     """Interface for evaluating component values using LLM."""
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini", mock_api: bool = False):
         """
         Initialize LLM evaluator.
         
         Args:
             api_key: OpenAI API key (if None, uses environment variable)
             model: Model name to use
+            mock_api: If True, returns random values instead of calling LLM
         """
-        self.llm = ChatOpenAI(
-            api_key=api_key,
-            model=model,
-            temperature=0
-        )
-        self._component_cache: Dict[str, float] = {}
+        self.mock_api = mock_api
+        if not mock_api:
+            self.llm = ChatOpenAI(
+                api_key=api_key,
+                model=model,
+                temperature=0
+            )
+        self._component_cache: Dict[str, Tuple[float, float]] = {}
     
     def _get_cache_key(self, component: Component, entity_ids: List[str], query: str) -> str:
         """Generate cache key for component value."""
         sorted_ids = tuple(sorted(entity_ids))
         return f"{component.name}:{sorted_ids}:{query}"
+    
+    def _parse_llm_response(self, response_content: str) -> Tuple[float, float]:
+        """
+        Parse LLM response to extract lower_bound and upper_bound.
+        
+        Args:
+            response_content: The raw response content from LLM
+            
+        Returns:
+            (lower_bound, upper_bound) tuple, both rounded to 1 decimal place
+        """
+        import re
+        
+        try:
+            # Parse response to extract two floats
+            content = response_content.strip()
+            # Try splitting by comma
+            parts = content.split(',')
+            if len(parts) >= 2:
+                lb = float(parts[0].strip())
+                ub = float(parts[1].strip())
+            else:
+                # Fallback: extract all numbers
+                numbers = re.findall(r'-?\d+\.?\d*', content)
+                if len(numbers) >= 2:
+                    lb = float(numbers[0])
+                    ub = float(numbers[1])
+                else:
+                    lb = float(numbers[0]) if numbers else 0.0
+                    ub = lb  # If only one number, use it for both
+        except (ValueError, IndexError):
+            # Fallback if parsing fails
+            numbers = re.findall(r'-?\d+\.?\d*', response_content)
+            if len(numbers) >= 2:
+                lb = float(numbers[0])
+                ub = float(numbers[1])
+            else:
+                lb = float(numbers[0]) if numbers else 0.0
+                ub = lb
+        
+        # Clamp to [0, 1] range and ensure lb <= ub
+        lb = max(0.0, min(1.0, lb))
+        ub = max(0.0, min(1.0, ub))
+        if lb > ub:
+            lb, ub = ub, lb  # Swap if needed
+        
+        # Round to 1 decimal place
+        lb = round(lb, 1)
+        ub = round(ub, 1)
+        
+        return (lb, ub)
     
     def evaluate_component(
         self,
@@ -34,9 +89,9 @@ class LLMEvaluator:
         entity_ids: List[str],
         query: str,
         use_cache: bool = True
-    ) -> float:
+    ) -> Tuple[float, float]:
         """
-        Evaluate a component value using LLM.
+        Evaluate a component value using LLM, returning an interval [lower_bound, upper_bound].
         
         Args:
             component: The component to evaluate
@@ -46,7 +101,7 @@ class LLMEvaluator:
             use_cache: Whether to use cached values
             
         Returns:
-            Component value as float
+            Component value as (lower_bound, upper_bound) tuple
         """
         if component.dimension != len(entity_ids):
             raise ValueError(f"Component dimension {component.dimension} doesn't match {len(entity_ids)} entities")
@@ -55,6 +110,18 @@ class LLMEvaluator:
         cache_key = self._get_cache_key(component, entity_ids, query)
         if use_cache and cache_key in self._component_cache:
             return self._component_cache[cache_key]
+        
+        # If mock_api is True, return random interval instead of calling LLM
+        if self.mock_api:
+            lb = round(random.uniform(0.0, 1.0), 1)
+            ub = round(random.uniform(lb, 1.0), 1)  # Ensure ub >= lb
+            # If rounding made ub < lb, set ub = lb
+            if ub < lb:
+                ub = lb
+            value = (lb, ub)
+            if use_cache:
+                self._component_cache[cache_key] = value
+            return value
         
         # Build prompt
         entity_info = []
@@ -80,19 +147,20 @@ Component Details:
 {dimension_explanation}
 
 CRITICAL REQUIREMENTS:
-1. You must return ONLY a single floating-point number
-2. The value MUST be in the range [0, 1] (0 = lowest, 1 = highest)
-3. Do NOT include any explanation, reasoning, or additional text
-4. Return ONLY the numeric value
+1. You must return a RANGE (lower bound and upper bound) as two floating-point numbers
+2. Both values MUST be in the range [0, 1], and lower_bound <= upper_bound
+3. The format should be: lower_bound, upper_bound (two numbers separated by a comma)
+4. Do NOT include any explanation, reasoning, or additional text
+5. Return ONLY the two numeric values separated by a comma
 
-Your response should be a single float between 0 and 1, nothing else."""
+Your response should be two floats between 0 and 1 separated by a comma (e.g., "0.3, 0.7"), nothing else."""
 
         human_prompt = f"""User Query: {query}
 
 Entity Information:
 {chr(10).join(entity_info)}
 
-Evaluate the {component.name} component value. Return only a float number in range [0, 1]:"""
+Evaluate the {component.name} component value. Return only two float numbers (lower_bound, upper_bound) separated by a comma, both in range [0, 1]:"""
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
@@ -101,17 +169,7 @@ Evaluate the {component.name} component value. Return only a float number in ran
         
         # Query LLM
         response = self.llm.invoke(prompt.format_messages())
-        try:
-            value = float(response.content.strip())
-            # Clamp to [0, 1] range
-            value = max(0.0, min(1.0, value))
-        except ValueError:
-            # Fallback if LLM doesn't return pure number
-            import re
-            numbers = re.findall(r'-?\d+\.?\d*', response.content)
-            value = float(numbers[0]) if numbers else 0.0
-            # Clamp to [0, 1] range
-            value = max(0.0, min(1.0, value))
+        value = self._parse_llm_response(response.content)
         
         # Cache result
         if use_cache:
