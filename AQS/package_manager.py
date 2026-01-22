@@ -248,11 +248,54 @@ class PackageManager:
         
         return pruned
     
+    def _compute_prob_package_exceeds(self, lb_p: float, ub_p: float, lb_other: float, ub_other: float) -> float:
+        """
+        Compute probability that package p (with bounds [lb_p, ub_p]) >= package other (with bounds [lb_other, ub_other]).
+        
+        Since scores are discrete (1 decimal place), we enumerate all possible values.
+        
+        Args:
+            lb_p: Lower bound of package p
+            ub_p: Upper bound of package p
+            lb_other: Lower bound of other package
+            ub_other: Upper bound of other package
+            
+        Returns:
+            Probability that p >= other
+        """
+        # Generate all possible discrete values (1 decimal place)
+        p_values = []
+        current = lb_p
+        while current <= ub_p + 0.05:  # Add small epsilon for floating point
+            p_values.append(round(current, 1))
+            current += 0.1
+        
+        other_values = []
+        current = lb_other
+        while current <= ub_other + 0.05:  # Add small epsilon for floating point
+            other_values.append(round(current, 1))
+            current += 0.1
+        
+        # Count cases where p >= other
+        favorable_cases = 0
+        total_cases = len(p_values) * len(other_values)
+        
+        for p_val in p_values:
+            for other_val in other_values:
+                if p_val >= other_val:
+                    favorable_cases += 1
+        
+        if total_cases == 0:
+            return 0.0
+        
+        result = favorable_cases / total_cases 
+        return result
+    
     def check_alpha_top_package(self, package: Package, alpha: float) -> bool:
         """
         Check if the probability of a package being the best (top) package is >= alpha.
         
-        The probability is computed based on the package's bounds and bounds of all other packages.
+        Probability = product of probabilities that this package >= each other package.
         
         Args:
             package: The package to check
@@ -279,37 +322,29 @@ class PackageManager:
         if not other_packages:
             return True  # Only one package, definitely best
         
-        # Find maximum lower bound and maximum upper bound among other packages
-        max_lb_others = float('-inf')
-        max_ub_others = float('-inf')
-        
+        # Compute probability that this package >= each other package
+        probabilities = []
         for other_package in other_packages:
             other_key = self._package_key(other_package)
-            if other_key in self.bounds:
-                other_lb, other_ub = self.bounds[other_key]
-                max_lb_others = max(max_lb_others, other_lb)
-                max_ub_others = max(max_ub_others, other_ub)
+            if other_key not in self.bounds:
+                continue
+            
+            other_lb, other_ub = self.bounds[other_key]
+            
+            # Compute prob(p >= other)
+            prob_exceeds = self._compute_prob_package_exceeds(lb_p, ub_p, other_lb, other_ub)
+            probabilities.append(prob_exceeds)
         
-        # If package's upper bound < maximum lower bound of others, it can never be best
-        if ub_p < max_lb_others:
+        if not probabilities:
             return False
         
-        # If package's lower bound >= maximum upper bound of others, it's definitely best
-        if lb_p >= max_ub_others:
-            return True
+        # Total probability = product of all individual probabilities
+        # (probability that p >= all other packages)
+        total_probability = 1.0
+        for prob in probabilities:
+            total_probability *= prob
         
-        # Otherwise, estimate probability that package is best
-        # Conservative estimate: probability that package's score > max(other scores)
-        # Using interval overlap and width
-        if ub_p <= lb_p:
-            return False  # Zero-width interval
-        
-        # Probability estimate: (ub_p - max_lb_others) / (ub_p - lb_p)
-        # This is a conservative lower bound on the probability
-        probability = max(0.0, (ub_p - max_lb_others) / (ub_p - lb_p))
-        probability = min(1.0, probability)  # Clamp to [0, 1]
-        
-        return probability >= alpha
+        return total_probability >= alpha
     
     def _get_questions_for_package(self, package: Package) -> Set[Tuple[str, Tuple[str, ...]]]:
         """

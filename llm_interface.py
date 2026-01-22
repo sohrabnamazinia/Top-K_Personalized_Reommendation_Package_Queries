@@ -1,7 +1,8 @@
 from typing import Dict, List, Optional, Tuple
 import random
+import os
 from langchain_openai import ChatOpenAI
-from langchain.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from models import Component, Entity
 
 
@@ -19,6 +20,8 @@ class LLMEvaluator:
         """
         self.mock_api = mock_api
         if not mock_api:
+            if api_key is None:
+                api_key = os.getenv('OPENAI_API_KEY')
             self.llm = ChatOpenAI(
                 api_key=api_key,
                 model=model,
@@ -150,10 +153,11 @@ CRITICAL REQUIREMENTS:
 1. You must return a RANGE (lower bound and upper bound) as two floating-point numbers
 2. Both values MUST be in the range [0, 1], and lower_bound <= upper_bound
 3. The format should be: lower_bound, upper_bound (two numbers separated by a comma)
-4. Do NOT include any explanation, reasoning, or additional text
-5. Return ONLY the two numeric values separated by a comma
+4. Keep the range as tight as possible - the difference between upper_bound and lower_bound should be at most 0.1
+5. Do NOT include any explanation, reasoning, or additional text
+6. Return ONLY the two numeric values separated by a comma
 
-Your response should be two floats between 0 and 1 separated by a comma (e.g., "0.3, 0.7"), nothing else."""
+Your response should be two floats between 0 and 1 separated by a comma (e.g., "0.3, 0.4"), with at most 0.1 difference, nothing else."""
 
         human_prompt = f"""User Query: {query}
 

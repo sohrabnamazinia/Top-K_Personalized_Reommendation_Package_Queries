@@ -1,0 +1,498 @@
+{
+  "timestamp": "2026-01-21T21:10:07.142356",
+  "parameters": {
+    "k": 3,
+    "alpha": 0.8,
+    "query": "Find products with good quality",
+    "num_entities": 5,
+    "components": [
+      {
+        "name": "relevance",
+        "dimension": 1
+      },
+      {
+        "name": "diversity",
+        "dimension": 2
+      }
+    ]
+  },
+  "result": {
+    "iterations": [
+      {
+        "iteration": 1,
+        "super_candidate": [
+          "e2",
+          "e1",
+          "e3"
+        ],
+        "super_candidate_bounds": [
+          0.0,
+          6.0
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('relevance', ('e3',))": 6,
+          "('relevance', ('e1',))": 6,
+          "('relevance', ('e2',))": 6,
+          "('diversity', ('e1', 'e4'))": 7,
+          "('diversity', ('e1', 'e2'))": 6,
+          "('diversity', ('e3', 'e5'))": 7,
+          "('diversity', ('e4', 'e5'))": 7,
+          "('diversity', ('e2', 'e4'))": 7,
+          "('diversity', ('e2', 'e5'))": 7,
+          "('diversity', ('e1', 'e5'))": 7,
+          "('relevance', ('e4',))": 6,
+          "('relevance', ('e5',))": 6,
+          "('diversity', ('e2', 'e3'))": 6,
+          "('diversity', ('e1', 'e3'))": 6,
+          "('diversity', ('e3', 'e4'))": 7
+        },
+        "selected_question": "('relevance', ('e3',))",
+        "response": [
+          0.6,
+          1.0
+        ],
+        "affected_packages": 6,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 14
+      },
+      {
+        "iteration": 2,
+        "super_candidate": [
+          "e2",
+          "e1",
+          "e3"
+        ],
+        "super_candidate_bounds": [
+          0.6,
+          6.0
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('relevance', ('e1',))": 5,
+          "('relevance', ('e2',))": 5,
+          "('diversity', ('e1', 'e4'))": 6,
+          "('diversity', ('e1', 'e2'))": 5,
+          "('diversity', ('e3', 'e5'))": 6,
+          "('diversity', ('e4', 'e5'))": 6,
+          "('diversity', ('e2', 'e4'))": 6,
+          "('diversity', ('e2', 'e5'))": 6,
+          "('diversity', ('e1', 'e5'))": 6,
+          "('relevance', ('e4',))": 5,
+          "('relevance', ('e5',))": 5,
+          "('diversity', ('e2', 'e3'))": 5,
+          "('diversity', ('e1', 'e3'))": 5,
+          "('diversity', ('e3', 'e4'))": 6
+        },
+        "selected_question": "('relevance', ('e1',))",
+        "response": [
+          0.2,
+          0.6
+        ],
+        "affected_packages": 6,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 13
+      },
+      {
+        "iteration": 3,
+        "super_candidate": [
+          "e2",
+          "e3",
+          "e4"
+        ],
+        "super_candidate_bounds": [
+          0.6,
+          6.0
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('relevance', ('e2',))": 5,
+          "('diversity', ('e1', 'e4'))": 5,
+          "('diversity', ('e1', 'e2'))": 5,
+          "('diversity', ('e3', 'e5'))": 6,
+          "('diversity', ('e4', 'e5'))": 6,
+          "('diversity', ('e2', 'e4'))": 5,
+          "('diversity', ('e2', 'e5'))": 6,
+          "('diversity', ('e1', 'e5'))": 6,
+          "('relevance', ('e4',))": 5,
+          "('relevance', ('e5',))": 5,
+          "('diversity', ('e2', 'e3'))": 5,
+          "('diversity', ('e1', 'e3'))": 5,
+          "('diversity', ('e3', 'e4'))": 5
+        },
+        "selected_question": "('relevance', ('e2',))",
+        "response": [
+          0.6,
+          0.7
+        ],
+        "affected_packages": 6,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 12
+      },
+      {
+        "iteration": 4,
+        "super_candidate": [
+          "e2",
+          "e3",
+          "e4"
+        ],
+        "super_candidate_bounds": [
+          1.2,
+          5.7
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('diversity', ('e1', 'e4'))": 5,
+          "('diversity', ('e1', 'e2'))": 5,
+          "('diversity', ('e3', 'e5'))": 5,
+          "('diversity', ('e4', 'e5'))": 5,
+          "('diversity', ('e2', 'e4'))": 4,
+          "('diversity', ('e2', 'e5'))": 5,
+          "('diversity', ('e1', 'e5'))": 5,
+          "('relevance', ('e4',))": 4,
+          "('relevance', ('e5',))": 4,
+          "('diversity', ('e2', 'e3'))": 4,
+          "('diversity', ('e1', 'e3'))": 5,
+          "('diversity', ('e3', 'e4'))": 4
+        },
+        "selected_question": "('diversity', ('e2', 'e4'))",
+        "response": [
+          0.6,
+          0.7
+        ],
+        "affected_packages": 3,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 11
+      },
+      {
+        "iteration": 5,
+        "super_candidate": [
+          "e2",
+          "e3",
+          "e4"
+        ],
+        "super_candidate_bounds": [
+          1.7999999999999998,
+          5.4
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('diversity', ('e1', 'e4'))": 4,
+          "('diversity', ('e1', 'e2'))": 4,
+          "('diversity', ('e3', 'e5'))": 6,
+          "('diversity', ('e4', 'e5'))": 5,
+          "('diversity', ('e2', 'e5'))": 6,
+          "('diversity', ('e1', 'e5'))": 6,
+          "('relevance', ('e4',))": 5,
+          "('relevance', ('e5',))": 5,
+          "('diversity', ('e2', 'e3'))": 5,
+          "('diversity', ('e1', 'e3'))": 4,
+          "('diversity', ('e3', 'e4'))": 5
+        },
+        "selected_question": "('diversity', ('e1', 'e4'))",
+        "response": [
+          0.2,
+          0.9
+        ],
+        "affected_packages": 3,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 10
+      },
+      {
+        "iteration": 6,
+        "super_candidate": [
+          "e2",
+          "e3",
+          "e4"
+        ],
+        "super_candidate_bounds": [
+          1.7999999999999998,
+          5.4
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('diversity', ('e1', 'e2'))": 4,
+          "('diversity', ('e3', 'e5'))": 6,
+          "('diversity', ('e4', 'e5'))": 5,
+          "('diversity', ('e2', 'e5'))": 6,
+          "('diversity', ('e1', 'e5'))": 6,
+          "('relevance', ('e4',))": 5,
+          "('relevance', ('e5',))": 5,
+          "('diversity', ('e2', 'e3'))": 5,
+          "('diversity', ('e1', 'e3'))": 4,
+          "('diversity', ('e3', 'e4'))": 5
+        },
+        "selected_question": "('diversity', ('e1', 'e2'))",
+        "response": [
+          0.1,
+          0.5
+        ],
+        "affected_packages": 3,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 9
+      },
+      {
+        "iteration": 7,
+        "super_candidate": [
+          "e2",
+          "e3",
+          "e4"
+        ],
+        "super_candidate_bounds": [
+          1.7999999999999998,
+          5.4
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('diversity', ('e3', 'e5'))": 4,
+          "('diversity', ('e4', 'e5'))": 4,
+          "('diversity', ('e2', 'e5'))": 4,
+          "('diversity', ('e1', 'e5'))": 4,
+          "('relevance', ('e4',))": 3,
+          "('relevance', ('e5',))": 3,
+          "('diversity', ('e2', 'e3'))": 3,
+          "('diversity', ('e1', 'e3'))": 4,
+          "('diversity', ('e3', 'e4'))": 3
+        },
+        "selected_question": "('relevance', ('e4',))",
+        "response": [
+          0.4,
+          0.5
+        ],
+        "affected_packages": 6,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 8
+      },
+      {
+        "iteration": 8,
+        "super_candidate": [
+          "e2",
+          "e3",
+          "e4"
+        ],
+        "super_candidate_bounds": [
+          2.1999999999999997,
+          4.9
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('diversity', ('e3', 'e5'))": 7,
+          "('diversity', ('e4', 'e5'))": 7,
+          "('diversity', ('e2', 'e5'))": 7,
+          "('diversity', ('e1', 'e5'))": 7,
+          "('relevance', ('e5',))": 7,
+          "('diversity', ('e2', 'e3'))": 7,
+          "('diversity', ('e1', 'e3'))": 3,
+          "('diversity', ('e3', 'e4'))": 7
+        },
+        "selected_question": "('diversity', ('e1', 'e3'))",
+        "response": [
+          0.4,
+          0.4
+        ],
+        "affected_packages": 3,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 7
+      },
+      {
+        "iteration": 9,
+        "super_candidate": [
+          "e2",
+          "e3",
+          "e4"
+        ],
+        "super_candidate_bounds": [
+          2.1999999999999997,
+          4.9
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('diversity', ('e3', 'e5'))": 3,
+          "('diversity', ('e4', 'e5'))": 3,
+          "('diversity', ('e2', 'e5'))": 3,
+          "('diversity', ('e1', 'e5'))": 3,
+          "('relevance', ('e5',))": 2,
+          "('diversity', ('e2', 'e3'))": 2,
+          "('diversity', ('e3', 'e4'))": 2
+        },
+        "selected_question": "('relevance', ('e5',))",
+        "response": [
+          0.1,
+          0.6
+        ],
+        "affected_packages": 6,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 6
+      },
+      {
+        "iteration": 10,
+        "super_candidate": [
+          "e2",
+          "e3",
+          "e4"
+        ],
+        "super_candidate_bounds": [
+          2.1999999999999997,
+          4.9
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('diversity', ('e3', 'e5'))": 2,
+          "('diversity', ('e4', 'e5'))": 3,
+          "('diversity', ('e2', 'e5'))": 3,
+          "('diversity', ('e1', 'e5'))": 4,
+          "('diversity', ('e2', 'e3'))": 3,
+          "('diversity', ('e3', 'e4'))": 3
+        },
+        "selected_question": "('diversity', ('e3', 'e5'))",
+        "response": [
+          0.9,
+          0.9
+        ],
+        "affected_packages": 3,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 5
+      },
+      {
+        "iteration": 11,
+        "super_candidate": [
+          "e5",
+          "e2",
+          "e3"
+        ],
+        "super_candidate_bounds": [
+          2.2,
+          5.2
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('diversity', ('e4', 'e5'))": 2,
+          "('diversity', ('e2', 'e5'))": 2,
+          "('diversity', ('e1', 'e5'))": 3,
+          "('diversity', ('e2', 'e3'))": 2,
+          "('diversity', ('e3', 'e4'))": 2
+        },
+        "selected_question": "('diversity', ('e4', 'e5'))",
+        "response": [
+          0.5,
+          0.6
+        ],
+        "affected_packages": 3,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 4
+      },
+      {
+        "iteration": 12,
+        "super_candidate": [
+          "e5",
+          "e2",
+          "e3"
+        ],
+        "super_candidate_bounds": [
+          2.2,
+          5.2
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('diversity', ('e2', 'e5'))": 2,
+          "('diversity', ('e1', 'e5'))": 2,
+          "('diversity', ('e2', 'e3'))": 2,
+          "('diversity', ('e3', 'e4'))": 2
+        },
+        "selected_question": "('diversity', ('e2', 'e5'))",
+        "response": [
+          0.5,
+          0.6
+        ],
+        "affected_packages": 3,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 3
+      },
+      {
+        "iteration": 13,
+        "super_candidate": [
+          "e5",
+          "e2",
+          "e3"
+        ],
+        "super_candidate_bounds": [
+          2.7,
+          4.8
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('diversity', ('e1', 'e5'))": 2,
+          "('diversity', ('e2', 'e3'))": 2,
+          "('diversity', ('e3', 'e4'))": 2
+        },
+        "selected_question": "('diversity', ('e1', 'e5'))",
+        "response": [
+          0.6,
+          0.8
+        ],
+        "affected_packages": 3,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 2
+      },
+      {
+        "iteration": 14,
+        "super_candidate": [
+          "e5",
+          "e2",
+          "e3"
+        ],
+        "super_candidate_bounds": [
+          2.7,
+          4.8
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('diversity', ('e2', 'e3'))": 1,
+          "('diversity', ('e3', 'e4'))": 1
+        },
+        "selected_question": "('diversity', ('e2', 'e3'))",
+        "response": [
+          0.0,
+          0.2
+        ],
+        "affected_packages": 3,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 1
+      },
+      {
+        "iteration": 15,
+        "super_candidate": [
+          "e5",
+          "e1",
+          "e3"
+        ],
+        "super_candidate_bounds": [
+          2.8000000000000003,
+          4.3
+        ],
+        "alpha_top_condition_met": false,
+        "heuristic_values": {
+          "('diversity', ('e3', 'e4'))": 0
+        },
+        "selected_question": "('diversity', ('e3', 'e4'))",
+        "response": [
+          0.5,
+          1.0
+        ],
+        "affected_packages": 3,
+        "pruned_packages": 0,
+        "remaining_unknown_questions": 0
+      }
+    ],
+    "questions_asked": 15,
+    "final_package": [
+      "e5",
+      "e3",
+      "e4"
+    ],
+    "final_bounds": [
+      3.0,
+      4.6
+    ]
+  }
+}

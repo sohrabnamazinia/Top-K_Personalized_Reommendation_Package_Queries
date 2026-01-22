@@ -1,0 +1,47 @@
+{
+  "timestamp": "2026-01-21T21:32:21.585234",
+  "parameters": {
+    "k": 3,
+    "alpha": 0.001,
+    "query": "Find products with good quality",
+    "num_entities": 5,
+    "components": [
+      {
+        "name": "relevance",
+        "dimension": 1
+      },
+      {
+        "name": "diversity",
+        "dimension": 2
+      }
+    ]
+  },
+  "result": {
+    "iterations": [
+      {
+        "iteration": 1,
+        "super_candidate": [
+          "e1",
+          "e2",
+          "e3"
+        ],
+        "super_candidate_bounds": [
+          0.0,
+          6.0
+        ],
+        "alpha_top_condition_met": true,
+        "stop_reason": "alpha_top_condition_met"
+      }
+    ],
+    "questions_asked": 0,
+    "final_package": [
+      "e1",
+      "e2",
+      "e3"
+    ],
+    "final_bounds": [
+      0.0,
+      6.0
+    ]
+  }
+}

@@ -21,6 +21,10 @@ def test_algorithm():
         'e3': Entity(id='e3', name='Entity 3', data='Average product, could be better'),
         'e4': Entity(id='e4', name='Entity 4', data='Outstanding service and support'),
         'e5': Entity(id='e5', name='Entity 5', data='Decent product at reasonable price'),
+        # 'e6': Entity(id='e6', name='Entity 6', data='bad product at reasonable price'),
+        # 'e7': Entity(id='e7', name='Entity 7', data='normal product at reasonable price'),
+        # 'e8': Entity(id='e8', name='Entity 8', data='good product at reasonable price'),
+        # 'e9': Entity(id='e9', name='Entity 9', data='average product at reasonable price'),
     }
     
     # Components
@@ -39,7 +43,7 @@ def test_algorithm():
     
     # Test parameters
     k = 3
-    alpha = 0.8
+    alpha = 0.05
     query = "Find products with good quality"
     
     print("=" * 60)
@@ -53,7 +57,7 @@ def test_algorithm():
     print()
     
     # Initialize LLM evaluator (use mock for testing)
-    llm_evaluator = LLMEvaluator(mock_api=True)
+    llm_evaluator = LLMEvaluator(mock_api=False)
     
     # Initialize algorithm
     print("Initializing AQS algorithm...")
@@ -106,7 +110,11 @@ def test_algorithm():
         print()
     
     # Save results to file
-    log_filename = f"aqs_algorithm_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    import os
+    outputs_dir = os.path.join(os.path.dirname(__file__), 'outputs')
+    os.makedirs(outputs_dir, exist_ok=True)
+    
+    log_filename = os.path.join(outputs_dir, f"aqs_algorithm_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
     log_data = {
         'timestamp': datetime.now().isoformat(),
         'parameters': {
