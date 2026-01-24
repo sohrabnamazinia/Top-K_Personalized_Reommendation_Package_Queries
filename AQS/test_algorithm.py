@@ -16,15 +16,16 @@ def test_algorithm():
     """Test AQS algorithm with sample data."""
     # Sample entities
     entities = {
-        'e1': Entity(id='e1', name='Entity 1', data='Great product with excellent features'),
-        'e2': Entity(id='e2', name='Entity 2', data='Good quality and fast delivery'),
-        'e3': Entity(id='e3', name='Entity 3', data='Average product, could be better'),
-        'e4': Entity(id='e4', name='Entity 4', data='Outstanding service and support'),
-        'e5': Entity(id='e5', name='Entity 5', data='Decent product at reasonable price'),
-        # 'e6': Entity(id='e6', name='Entity 6', data='bad product at reasonable price'),
-        # 'e7': Entity(id='e7', name='Entity 7', data='normal product at reasonable price'),
-        # 'e8': Entity(id='e8', name='Entity 8', data='good product at reasonable price'),
-        # 'e9': Entity(id='e9', name='Entity 9', data='average product at reasonable price'),
+        'e1': Entity(id='e1', name='Product A', data='Great product with excellent features and high quality'),
+        'e2': Entity(id='e2', name='Product B', data='Good quality and fast delivery service'),
+        'e3': Entity(id='e3', name='Product C', data='Average product, could be better but affordable'),
+        'e4': Entity(id='e4', name='Product D', data='Outstanding service and customer support'),
+        'e5': Entity(id='e5', name='Product E', data='Decent product at reasonable price point'),
+        # 'e6': Entity(id='e6', name='Product F', data='Premium product with advanced features and warranty'),
+        # 'e7': Entity(id='e7', name='Product G', data='Budget-friendly option with basic functionality'),
+        # 'e8': Entity(id='e8', name='Product H', data='Innovative design with modern technology integration'),
+        # 'e9': Entity(id='e9', name='Product I', data='Reliable product with consistent performance'),
+        # 'e10': Entity(id='e10', name='Product J', data='Versatile product suitable for multiple use cases'),
     }
     
     # Components
@@ -57,7 +58,7 @@ def test_algorithm():
     print()
     
     # Initialize LLM evaluator (use mock for testing)
-    llm_evaluator = LLMEvaluator(mock_api=False)
+    llm_evaluator = LLMEvaluator(mock_api=True)
     
     # Initialize algorithm
     print("Initializing AQS algorithm...")
@@ -68,7 +69,8 @@ def test_algorithm():
         alpha=alpha,
         query=query,
         llm_evaluator=llm_evaluator,
-        initial_packages=None  # Will build all possible packages
+        initial_packages=None,  # Will build all possible packages
+        print_log=True  # Enable detailed logging during execution
     )
     
     print(f"  Initial packages: {algorithm.package_manager.get_package_count()}")
@@ -78,13 +80,14 @@ def test_algorithm():
     # Run algorithm
     print("Running AQS algorithm...")
     print("-" * 60)
+    print()
     
     final_package, metadata = algorithm.run()
     
-    # Display results
+    # Display final results summary
     print()
     print("=" * 60)
-    print("Algorithm Results")
+    print("Algorithm Results Summary")
     print("=" * 60)
     print(f"Final Package: {list(final_package.entities) if final_package else 'None'}")
     if final_package:
@@ -93,21 +96,6 @@ def test_algorithm():
     print(f"Questions Asked: {metadata['questions_asked']}")
     print(f"Number of Iterations: {len(metadata['iterations'])}")
     print()
-    
-    # Print iteration details
-    print("Iteration Details:")
-    for iter_info in metadata['iterations']:
-        print(f"  Iteration {iter_info['iteration']}:")
-        print(f"    Super-candidate: {iter_info.get('super_candidate', 'N/A')}")
-        print(f"    Bounds: {iter_info.get('super_candidate_bounds', 'N/A')}")
-        print(f"    Alpha-top condition met: {iter_info.get('alpha_top_condition_met', 'N/A')}")
-        if 'selected_question' in iter_info:
-            print(f"    Selected question: {iter_info['selected_question']}")
-            print(f"    Response: {iter_info.get('response', 'N/A')}")
-            print(f"    Affected packages: {iter_info.get('affected_packages', 'N/A')}")
-            print(f"    Pruned packages: {iter_info.get('pruned_packages', 'N/A')}")
-        print(f"    Remaining unknown questions: {iter_info.get('remaining_unknown_questions', 'N/A')}")
-        print()
     
     # Save results to file
     import os

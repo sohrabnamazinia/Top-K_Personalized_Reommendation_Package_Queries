@@ -22,7 +22,9 @@ class AQSAlgorithm:
         alpha: float,
         query: str,
         llm_evaluator: LLMEvaluator,
-        initial_packages: Optional[List[Package]] = None
+        initial_packages: Optional[List[Package]] = None,
+        print_log: bool = False,
+        init_dim_1: bool = True
     ):
         """
         Initialize AQS algorithm.
@@ -35,6 +37,8 @@ class AQSAlgorithm:
             query: User query
             llm_evaluator: LLM evaluator instance
             initial_packages: Optional initial set of packages (if None, uses all possible packages)
+            print_log: If True, print detailed logs for each iteration
+            init_dim_1: If True, preprocess by asking all dimension 1 (unary) questions and updating bounds
         """
         self.entities = entities
         self.components = components
@@ -42,6 +46,7 @@ class AQSAlgorithm:
         self.alpha = alpha
         self.query = query
         self.llm_evaluator = llm_evaluator
+        self.print_log = print_log
         self.scoring_function = ScoringFunction(components, llm_evaluator, entities, query)
         
         # Initialize package manager
@@ -56,6 +61,10 @@ class AQSAlgorithm:
         # Initialize known and unknown questions
         self.known_questions: Set[Tuple[str, Tuple[str, ...]]] = set()
         self.unknown_questions: Set[Tuple[str, Tuple[str, ...]]] = self._initialize_unknown_questions()
+        
+        # Preprocessing: Ask all dimension 1 (unary) questions if enabled
+        if init_dim_1:
+            self._preprocess_dimension_1()
     
     def _initialize_unknown_questions(self) -> Set[Tuple[str, Tuple[str, ...]]]:
         """Initialize the set of all possible questions."""
@@ -77,6 +86,35 @@ class AQSAlgorithm:
         
         return questions
     
+    def _preprocess_dimension_1(self):
+        """Preprocess by asking all dimension 1 (unary) questions, updating bounds, and pruning packages."""
+        # Find all dimension 1 questions
+        dim_1_questions = []
+        for question in list(self.unknown_questions):
+            component_name, entity_ids_tuple = question
+            component = next(c for c in self.components if c.name == component_name)
+            if component.dimension == 1:
+                dim_1_questions.append(question)
+        
+        # Ask each dimension 1 question
+        for question in dim_1_questions:
+            component, entity_ids = self._question_to_component_entities(question)
+            
+            # Probe the question to get response
+            response = self.scoring_function.probe_question(
+                component, self.entities, entity_ids, self.query, use_cache=True
+            )
+            
+            # Update bounds for affected packages
+            affected_packages = self.package_manager.update_bounds(component, entity_ids, response)
+            
+            # Prune dominated packages
+            self.package_manager.prune_packages(affected_packages)
+            
+            # Move question from unknown to known
+            self.unknown_questions.remove(question)
+            self.known_questions.add(question)
+        
     def _question_to_component_entities(self, question: Tuple[str, Tuple[str, ...]]) -> Tuple[Component, List[str]]:
         """Convert question tuple to (component, entity_ids)."""
         component_name, entity_ids_tuple = question
@@ -411,6 +449,25 @@ class AQSAlgorithm:
             pruned = self.package_manager.prune_packages(affected_packages)
             iter_info['affected_packages'] = len(affected_packages)
             iter_info['pruned_packages'] = len(pruned)
+            
+            # Print log if enabled
+            if self.print_log:
+                print("=" * 60)
+                print(f"Iteration {iteration}")
+                print("=" * 60)
+                print("\nPackages with bounds:")
+                for pkg in self.package_manager.get_packages():
+                    lb, ub = self.package_manager.get_bounds(pkg)
+                    print(f"  Package {list(pkg.entities)}: bounds=({lb:.2f}, {ub:.2f})")
+                print(f"\nSelected question: {best_question}")
+                print(f"Response: {response}")
+                if pruned:
+                    print(f"\nPruned packages ({len(pruned)}):")
+                    for pkg in pruned:
+                        print(f"  {list(pkg.entities)}")
+                else:
+                    print("\nNo packages pruned in this iteration")
+                print()
             
             # Move question from unknown to known
             self.unknown_questions.remove(best_question)

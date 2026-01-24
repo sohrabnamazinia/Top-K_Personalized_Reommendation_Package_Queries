@@ -1,0 +1,5 @@
+pruning: 
+- make pruning alpha-based to be more effective 
+
+time: 
+- speedup nad optimize heuristic
