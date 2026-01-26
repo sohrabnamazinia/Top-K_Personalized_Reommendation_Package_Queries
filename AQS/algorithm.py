@@ -1,5 +1,6 @@
 from typing import List, Dict, Set, Tuple, Optional
 import sys
+import random
 from pathlib import Path
 
 # Add parent directory to path for imports
@@ -24,7 +25,8 @@ class AQSAlgorithm:
         llm_evaluator: LLMEvaluator,
         initial_packages: Optional[List[Package]] = None,
         print_log: bool = False,
-        init_dim_1: bool = True
+        init_dim_1: bool = True,
+        is_next_q_random: bool = False
     ):
         """
         Initialize AQS algorithm.
@@ -39,6 +41,7 @@ class AQSAlgorithm:
             initial_packages: Optional initial set of packages (if None, uses all possible packages)
             print_log: If True, print detailed logs for each iteration
             init_dim_1: If True, preprocess by asking all dimension 1 (unary) questions and updating bounds
+            is_next_q_random: If True, randomly select next question instead of using heuristic evaluation
         """
         self.entities = entities
         self.components = components
@@ -47,6 +50,7 @@ class AQSAlgorithm:
         self.query = query
         self.llm_evaluator = llm_evaluator
         self.print_log = print_log
+        self.is_next_q_random = is_next_q_random
         self.scoring_function = ScoringFunction(components, llm_evaluator, entities, query)
         
         # Initialize package manager
@@ -61,6 +65,9 @@ class AQSAlgorithm:
         # Initialize known and unknown questions
         self.known_questions: Set[Tuple[str, Tuple[str, ...]]] = set()
         self.unknown_questions: Set[Tuple[str, Tuple[str, ...]]] = self._initialize_unknown_questions()
+        
+        # Track initial package count for pruning statistics
+        self.initial_package_count = len(self.package_manager.get_packages())
         
         # Preprocessing: Ask all dimension 1 (unary) questions if enabled
         if init_dim_1:
@@ -416,22 +423,34 @@ class AQSAlgorithm:
             
             iter_info['alpha_top_condition_met'] = False
             
-            # Evaluate heuristics for all unknown questions
-            heuristic_values = {}
-            for question in self.unknown_questions:
-                # Note: This is expensive - in practice, you might want to cache or optimize
-                heuristic_values[question] = self.heuristic_evaluation(question)
-            
-            iter_info['heuristic_values'] = {str(q): v for q, v in heuristic_values.items()}
-            
-            # Select question with minimum heuristic
-            if not heuristic_values:
-                iter_info['stop_reason'] = 'no_questions_available'
-                metadata['iterations'].append(iter_info)
-                break
-            
-            best_question = min(heuristic_values.items(), key=lambda x: x[1])[0]
-            iter_info['selected_question'] = str(best_question)
+            # Select next question based on mode
+            if self.is_next_q_random:
+                # Random selection: choose randomly from unknown questions
+                if not self.unknown_questions:
+                    iter_info['stop_reason'] = 'no_questions_available'
+                    metadata['iterations'].append(iter_info)
+                    break
+                best_question = random.choice(list(self.unknown_questions))
+                iter_info['selected_question'] = str(best_question)
+                iter_info['selection_mode'] = 'random'
+            else:
+                # Heuristic-based selection: evaluate heuristics for all unknown questions
+                heuristic_values = {}
+                for question in self.unknown_questions:
+                    # Note: This is expensive - in practice, you might want to cache or optimize
+                    heuristic_values[question] = self.heuristic_evaluation(question)
+                
+                iter_info['heuristic_values'] = {str(q): v for q, v in heuristic_values.items()}
+                
+                # Select question with minimum heuristic
+                if not heuristic_values:
+                    iter_info['stop_reason'] = 'no_questions_available'
+                    metadata['iterations'].append(iter_info)
+                    break
+                
+                best_question = min(heuristic_values.items(), key=lambda x: x[1])[0]
+                iter_info['selected_question'] = str(best_question)
+                iter_info['selection_mode'] = 'heuristic'
             
             # Probe LLM for actual response
             component, entity_ids = self._question_to_component_entities(best_question)
@@ -480,5 +499,12 @@ class AQSAlgorithm:
         final_package = self.identify_current_super_candidate()
         metadata['final_package'] = list(final_package.entities) if final_package else None
         metadata['final_bounds'] = self.package_manager.get_bounds(final_package) if final_package else None
+        
+        # Calculate total packages pruned (including preprocessing)
+        final_package_count = len(self.package_manager.get_packages())
+        total_packages_pruned = self.initial_package_count - final_package_count
+        
+        # Print number of packages pruned
+        print(f"\nNumber of packages pruned: {total_packages_pruned}")
         
         return final_package, metadata

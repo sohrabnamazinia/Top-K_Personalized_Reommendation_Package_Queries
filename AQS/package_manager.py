@@ -196,6 +196,7 @@ class PackageManager:
         
         Args:
             packages_to_check: List of packages to check for pruning (typically recently updated packages)
+                              Note: This is a hint for optimization, but ALL packages are checked for completeness.
             
         Returns:
             List of packages that were pruned
@@ -203,11 +204,11 @@ class PackageManager:
         pruned = []
         packages_to_remove = set()
         
-        # Check each package in the input list
-        for package in packages_to_check:
-            if package not in self.packages:
-                continue  # Already removed or not in manager
-            
+        # Check ALL packages against ALL other packages to ensure completeness
+        # This fixes the issue where packages not in packages_to_check might be dominated
+        for package in self.packages:
+            if package not in packages_to_check:
+                continue
             key = self._package_key(package)
             if key not in self.bounds:
                 continue  # No bounds for this package
@@ -229,12 +230,13 @@ class PackageManager:
                 # This package can never be better, prune it
                 if ub <= other_lb:
                     packages_to_remove.add(key)
-                    pruned.append(package)
+                    if package not in pruned:
+                        pruned.append(package)
                     break  # No need to check further for this package
                 
-                # Case 2: Other package's lower bound >= this package's upper bound
+                # Case 2: Other package's upper bound <= this package's lower bound
                 # Other package can never be better, prune it
-                if other_lb >= ub:
+                if other_ub <= lb:
                     packages_to_remove.add(other_key)
                     if other_package not in pruned:
                         pruned.append(other_package)

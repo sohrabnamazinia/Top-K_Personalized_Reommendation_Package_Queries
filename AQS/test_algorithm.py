@@ -21,11 +21,11 @@ def test_algorithm():
         'e3': Entity(id='e3', name='Product C', data='Average product, could be better but affordable'),
         'e4': Entity(id='e4', name='Product D', data='Outstanding service and customer support'),
         'e5': Entity(id='e5', name='Product E', data='Decent product at reasonable price point'),
-        # 'e6': Entity(id='e6', name='Product F', data='Premium product with advanced features and warranty'),
-        # 'e7': Entity(id='e7', name='Product G', data='Budget-friendly option with basic functionality'),
-        # 'e8': Entity(id='e8', name='Product H', data='Innovative design with modern technology integration'),
-        # 'e9': Entity(id='e9', name='Product I', data='Reliable product with consistent performance'),
-        # 'e10': Entity(id='e10', name='Product J', data='Versatile product suitable for multiple use cases'),
+        'e6': Entity(id='e6', name='Product F', data='Premium product with advanced features and warranty'),
+        'e7': Entity(id='e7', name='Product G', data='Budget-friendly option with basic functionality'),
+        'e8': Entity(id='e8', name='Product H', data='Innovative design with modern technology integration'),
+        'e9': Entity(id='e9', name='Product I', data='Reliable product with consistent performance'),
+        'e10': Entity(id='e10', name='Product J', data='Versatile product suitable for multiple use cases'),
     }
     
     # Components
@@ -44,7 +44,7 @@ def test_algorithm():
     
     # Test parameters
     k = 3
-    alpha = 0.05
+    alpha = 0.8
     query = "Find products with good quality"
     
     print("=" * 60)
@@ -70,7 +70,8 @@ def test_algorithm():
         query=query,
         llm_evaluator=llm_evaluator,
         initial_packages=None,  # Will build all possible packages
-        print_log=True  # Enable detailed logging during execution
+        print_log=True,  # Enable detailed logging during execution
+        is_next_q_random=False
     )
     
     print(f"  Initial packages: {algorithm.package_manager.get_package_count()}")

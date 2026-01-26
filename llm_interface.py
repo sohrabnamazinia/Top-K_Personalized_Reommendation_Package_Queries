@@ -116,11 +116,10 @@ class LLMEvaluator:
         
         # If mock_api is True, return random interval instead of calling LLM
         if self.mock_api:
-            lb = round(random.uniform(0.0, 1.0), 1)
-            ub = round(random.uniform(lb, 1.0), 1)  # Ensure ub >= lb
-            # If rounding made ub < lb, set ub = lb
-            if ub < lb:
-                ub = lb
+            # Return exact same value for both bounds
+            val = round(random.uniform(0.0, 1.0), 1)
+            lb = val
+            ub = val  # Same value for both bounds
             value = (lb, ub)
             if use_cache:
                 self._component_cache[cache_key] = value
@@ -153,18 +152,18 @@ CRITICAL REQUIREMENTS:
 1. You must return a RANGE (lower bound and upper bound) as two floating-point numbers
 2. Both values MUST be in the range [0, 1], and lower_bound <= upper_bound
 3. The format should be: lower_bound, upper_bound (two numbers separated by a comma)
-4. Keep the range as tight as possible - the difference between upper_bound and lower_bound should be at most 0.1
+4. IMPORTANT: The lower bound and upper bound MUST be EXACTLY THE SAME value (e.g., "0.5, 0.5" or "0.0, 0.0" or "1.0, 1.0")
 5. Do NOT include any explanation, reasoning, or additional text
 6. Return ONLY the two numeric values separated by a comma
 
-Your response should be two floats between 0 and 1 separated by a comma (e.g., "0.3, 0.4"), with at most 0.1 difference, nothing else."""
+Your response should be two floats between 0 and 1 separated by a comma where both values are EXACTLY THE SAME (e.g., "0.5, 0.5"), nothing else."""
 
         human_prompt = f"""User Query: {query}
 
 Entity Information:
 {chr(10).join(entity_info)}
 
-Evaluate the {component.name} component value. Return only two float numbers (lower_bound, upper_bound) separated by a comma, both in range [0, 1]:"""
+Evaluate the {component.name} component value. Return only two float numbers (lower_bound, upper_bound) separated by a comma, both in range [0, 1]. IMPORTANT: Both values must be EXACTLY THE SAME (e.g., "0.5, 0.5"):"""
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
