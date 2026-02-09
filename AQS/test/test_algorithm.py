@@ -4,30 +4,20 @@ from pathlib import Path
 import json
 from datetime import datetime
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from models import Entity, Component
-from llm_interface import LLMEvaluator
+from utils.models import Entity, Component
+from utils.llm_interface import LLMEvaluator
+from preprocessing.load_data import load_entities_from_csv
 from AQS.algorithm import AQSAlgorithm
 
 
 def test_algorithm():
     """Test AQS algorithm with sample data."""
-    # Sample entities
-    entities = {
-        'e1': Entity(id='e1', name='Product A', data='Great product with excellent features and high quality'),
-        'e2': Entity(id='e2', name='Product B', data='Good quality and fast delivery service'),
-        'e3': Entity(id='e3', name='Product C', data='Average product, could be better but affordable'),
-        'e4': Entity(id='e4', name='Product D', data='Outstanding service and customer support'),
-        'e5': Entity(id='e5', name='Product E', data='Decent product at reasonable price point'),
-        'e6': Entity(id='e6', name='Product F', data='Premium product with advanced features and warranty'),
-        'e7': Entity(id='e7', name='Product G', data='Budget-friendly option with basic functionality'),
-        'e8': Entity(id='e8', name='Product H', data='Innovative design with modern technology integration'),
-        'e9': Entity(id='e9', name='Product I', data='Reliable product with consistent performance'),
-        'e10': Entity(id='e10', name='Product J', data='Versatile product suitable for multiple use cases'),
-    }
-    
+    csv_path = Path(__file__).parent.parent.parent / "data" / "sample_data.csv"
+    entities = load_entities_from_csv(str(csv_path))
+
     # Components
     components = [
         Component(

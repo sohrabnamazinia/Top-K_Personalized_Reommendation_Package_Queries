@@ -27,7 +27,7 @@ export OPENAI_API_KEY=your_api_key_here
 ### Root Folder (Common Files)
 - `models.py`: Data models (Entity, Package, Component)
 - `llm_interface.py`: LLM interface for component evaluation (returns intervals [lower, upper])
-- `load_data.py`: Utility to load entities from CSV
+- `preprocessing/load_data.py`: Utility to load entities from CSV
 - `sample_data.csv`: Example data file
 
 ### PCS Folder (Approximate Algorithm)
@@ -68,8 +68,8 @@ export OPENAI_API_KEY=your_api_key_here
 ### PCS Algorithm (Approximate)
 
 ```python
-from models import Entity, Component
-from llm_interface import LLMEvaluator
+from utils.models import Entity, Component
+from utils.llm_interface import LLMEvaluator
 from PCS.algorithm import AQAAlgorithm
 
 # Define components
@@ -90,8 +90,8 @@ final_package, metadata = algorithm.run(entities, k=3, query="your query")
 ### AQS Algorithm (Exact)
 
 ```python
-from models import Entity, Component
-from llm_interface import LLMEvaluator
+from utils.models import Entity, Component
+from utils.llm_interface import LLMEvaluator
 from AQS.algorithm import AQSAlgorithm
 
 # Define components

@@ -2,10 +2,10 @@
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from models import Entity, Package, Component
+from utils.models import Entity, Package, Component
 from AQS.package_manager import PackageManager
 
 

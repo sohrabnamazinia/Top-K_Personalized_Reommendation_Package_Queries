@@ -3,7 +3,7 @@ import random
 import os
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-from models import Component, Entity
+from .models import Component, Entity
 
 
 class LLMEvaluator:
@@ -179,4 +179,3 @@ Evaluate the {component.name} component value. Return only two float numbers (lo
             self._component_cache[cache_key] = value
         
         return value
-

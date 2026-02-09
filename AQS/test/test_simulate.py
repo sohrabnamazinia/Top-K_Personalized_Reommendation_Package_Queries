@@ -3,10 +3,11 @@ import sys
 from pathlib import Path
 import copy
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from models import Entity, Component, Package
-from llm_interface import LLMEvaluator
+from utils.models import Entity, Component, Package
+from utils.llm_interface import LLMEvaluator
 from AQS.algorithm import AQSAlgorithm
 
 

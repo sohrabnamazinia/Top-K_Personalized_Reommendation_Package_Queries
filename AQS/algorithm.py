@@ -6,10 +6,10 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from models import Package, Component, Entity
+from utils.models import Package, Component, Entity
 from AQS.package_manager import PackageManager
 from AQS.scoring import ScoringFunction
-from llm_interface import LLMEvaluator
+from utils.llm_interface import LLMEvaluator
 
 
 class AQSAlgorithm:

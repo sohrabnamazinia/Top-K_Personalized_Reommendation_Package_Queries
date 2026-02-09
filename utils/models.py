@@ -22,19 +22,18 @@ class Component:
 class Package:
     """Represents a package (set) of entities."""
     entities: Set[str]  # Set of entity IDs
-    
+
     def __contains__(self, entity_id: str) -> bool:
         return entity_id in self.entities
-    
+
     def size(self) -> int:
         return len(self.entities)
-    
+
     def add(self, entity_id: str):
         self.entities.add(entity_id)
-    
+
     def remove(self, entity_id: str):
         self.entities.discard(entity_id)
-    
+
     def copy(self) -> 'Package':
         return Package(entities=self.entities.copy())
-

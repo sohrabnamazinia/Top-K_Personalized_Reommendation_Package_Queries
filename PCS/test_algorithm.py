@@ -7,8 +7,8 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from models import Entity, Package, Component
-from llm_interface import LLMEvaluator
+from utils.models import Entity, Package, Component
+from utils.llm_interface import LLMEvaluator
 from algorithm import AQAAlgorithm
 
 
