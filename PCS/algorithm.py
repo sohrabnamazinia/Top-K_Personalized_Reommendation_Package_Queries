@@ -1,4 +1,5 @@
 from typing import Dict, List, Tuple, Optional
+import random
 import numpy as np
 import sys
 from pathlib import Path
@@ -8,34 +9,54 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.models import Package, Component, Entity
 from utils.llm_interface import LLMEvaluator
-from scoring import ScoringFunction
+from PCS.scoring import ScoringFunction
 
 
-class AQAAlgorithm:
-    """Approximate Algorithm with Chebyshev-Guided Swaps for top-k package queries."""
+class PCSAlgorithm:
+    """Probabilistic Candidate Swap algorithm for top-k package queries."""
     
     def __init__(
         self,
         components: List[Component],
         llm_evaluator: LLMEvaluator,
         budget_rate: int = 5,
-        epsilon: float = 0.01
+        epsilon: float = 0.01,
+        smart_initial_package: bool = True,
+        exceed_number_of_chance: int = 3
     ):
         """
-        Initialize AQA algorithm.
+        Initialize PCS algorithm.
         
         Args:
             components: List of components
             llm_evaluator: LLM evaluator instance
             budget_rate: Number of top candidates to evaluate exactly (s)
             epsilon: Convergence threshold
+            smart_initial_package: If True, initial package is top-k by unary scores; if False, k entities chosen at random.
+            exceed_number_of_chance: When no_beneficial_swap, try next-s-by-TP up to this many times across the run (default 3).
         """
         self.components = components
         self.scoring_function = ScoringFunction(components, llm_evaluator)
         self.budget_rate = budget_rate
         self.epsilon = epsilon
-    
+        self.smart_initial_package = smart_initial_package
+        self.exceed_number_of_chance = exceed_number_of_chance
+
     def select_initial_package(
+        self,
+        entities: Dict[str, Entity],
+        k: int,
+        query: str
+    ) -> Package:
+        """
+        Select initial package: either smart (top-k by unary scores) or naive (random k entities),
+        depending on self.smart_initial_package.
+        """
+        if self.smart_initial_package:
+            return self.select_initial_package_smart(entities, k, query)
+        return self.select_initial_package_naive(entities, k)
+
+    def select_initial_package_smart(
         self,
         entities: Dict[str, Entity],
         k: int,
@@ -60,15 +81,15 @@ class AQAAlgorithm:
             entity_ids = list(entities.keys())[:k]
             return Package(entities=set(entity_ids))
         
-        # Compute unary scores for all entities
+        # Compute unary scores for all entities (use midpoint of interval)
         entity_scores = {}
         for entity_id, entity in entities.items():
             score = 0.0
             for component in unary_components:
-                value = self.scoring_function.probe_question(
+                lb, ub = self.scoring_function.probe_question(
                     component, entities, [entity_id], query, use_cache=True
                 )
-                score += value
+                score += (lb + ub) / 2.0
             entity_scores[entity_id] = score
         
         # Select top-k
@@ -76,51 +97,130 @@ class AQAAlgorithm:
         top_k_ids = [eid for eid, _ in sorted_entities[:k]]
         
         return Package(entities=set(top_k_ids))
+
+    def select_initial_package_naive(
+        self,
+        entities: Dict[str, Entity],
+        k: int
+    ) -> Package:
+        """
+        Select initial package: k entities chosen uniformly at random.
+        
+        Args:
+            entities: Dictionary mapping entity_id to Entity
+            k: Package size
+            
+        Returns:
+            Initial package
+        """
+        entity_ids = list(entities.keys())
+        if k >= len(entity_ids):
+            return Package(entities=set(entity_ids))
+        chosen = set(random.sample(entity_ids, k))
+        return Package(entities=chosen)
     
     def estimate_contribution_stats(
         self,
         entity_id: str,
         package: Package,
         entities: Dict[str, Entity],
-        query: str
+        query: str,
+        e_minus: str
     ) -> Tuple[float, float]:
         """
-        Estimate expected value and variance of contribution for an external entity.
-        
-        This is a simplified estimation. In practice, you might use historical data
-        or other heuristics. For now, we use a simple approximation.
-        
+        Estimate expected value and variance of contribution for an external entity
+        in the hypothetical package p_t = (package \\ {e_minus}) ∪ {entity_id}.
+
+        E[X_i] = sum over j sum over p ⊆ p_t, i ∈ p, |p|=d_j  of μ_{j,p}
+        Var(X_i) = sum over j sum over p ⊆ p_t, i ∈ p, |p|=d_j  of σ²_{j,p}
+
+        For known component values: μ = midpoint of cached interval, σ² = 0.
+        For unknown: model as discrete uniform on [MIN, MAX]: μ = (MIN+MAX)/2,
+        σ² = ((MAX-MIN+1)² - 1) / 12.
+
         Returns:
-            (expected_value, variance)
+            (expected_contribution, variance_of_contribution)
         """
-        # Simple heuristic: estimate based on unary components
-        unary_components = [c for c in self.components if c.dimension == 1]
-        
-        if unary_components:
-            # Estimate based on unary component values
-            estimated_value = 0.0
-            for component in unary_components:
-                # Use a simple estimate (could be improved)
-                value = self.scoring_function.get_component_value(
-                    component, entities, [entity_id], query, use_cache=True
+        # Hypothetical package: current package with e_minus removed and entity_id added
+        hyp_entities = (package.entities - {e_minus}) | {entity_id}
+        hyp_list = list(hyp_entities)
+
+        expected = 0.0
+        variance = 0.0
+
+        for component in self.components:
+            d_j = component.dimension
+            # All subsets p of hyp_entities with entity_id in p and |p| = d_j
+            if d_j == 1:
+                if entity_id not in hyp_entities:
+                    continue
+                p_ids = [entity_id]
+                mu, sigma_sq = self.scoring_function.get_component_mean_variance(
+                    component, p_ids, query
                 )
-                estimated_value += value
-            
-            # Add estimated binary contributions (simplified)
-            binary_components = [c for c in self.components if c.dimension == 2]
-            if binary_components:
-                # Rough estimate: average binary value * (package_size)
-                estimated_value += len(binary_components) * len(package.entities) * 0.5
-            
-            # Simple variance estimation (could be improved)
-            variance = abs(estimated_value) * 0.1  # 10% of value as variance
-        else:
-            # Fallback if no unary components
-            estimated_value = 1.0
-            variance = 0.5
-        
-        return estimated_value, variance
-    
+                expected += mu
+                variance += sigma_sq
+            elif d_j == 2:
+                for other_id in hyp_list:
+                    if other_id == entity_id:
+                        continue
+                    p_ids = sorted([entity_id, other_id])
+                    mu, sigma_sq = self.scoring_function.get_component_mean_variance(
+                        component, p_ids, query
+                    )
+                    expected += mu
+                    variance += sigma_sq
+
+        #print(f"Estimated contribution stats for entity {entity_id} in hypothetical package: E[X] = {expected}, Var(X) = {variance}")
+        return (expected, variance)
+
+    def _try_beneficial_swap_or_exceed(
+        self,
+        sorted_tp: List[Tuple[str, float]],
+        e_minus: str,
+        package: Package,
+        entities: Dict[str, Entity],
+        query: str,
+        delta_min_mid: float,
+        iter_info: dict,
+        exceed_chances_remaining: int,
+        e_star: str,
+        max_contrib_value: Tuple[float, float],
+        max_contrib_mid: float
+    ) -> Tuple[bool, str, Tuple[float, float], int]:
+        """If current best is beneficial, return (True, e_star, max_contrib_value, exceed_chances_remaining).
+        Else try next-s-by-TP up to exceed_chances_remaining times; return (swap_done, e_star, max_contrib_value, updated_remaining).
+        """
+        def _mid(interval):
+            return (interval[0] + interval[1]) / 2.0
+        if max_contrib_mid > delta_min_mid:
+            return (True, e_star, max_contrib_value, exceed_chances_remaining)
+        offset = 1
+        while exceed_chances_remaining > 0:
+            next_s = [eid for eid, _ in sorted_tp[self.budget_rate * offset : self.budget_rate * (offset + 1)]]
+            if not next_s:
+                break
+            exceed_chances_remaining -= 1
+            exact_next = {}
+            for candidate_id in next_s:
+                hyp = package.copy()
+                hyp.remove(e_minus)
+                hyp.add(candidate_id)
+                exact_next[candidate_id] = self.scoring_function.compute_contribution(
+                    candidate_id, hyp, entities, query, use_cache=True
+                )
+            if exact_next:
+                best = max(exact_next.items(), key=lambda x: _mid(x[1]))
+                e_star, max_contrib_value = best[0], best[1]
+                max_contrib_mid = _mid(max_contrib_value)
+                if max_contrib_mid > delta_min_mid:
+                    iter_info['e_star'] = e_star
+                    iter_info['max_contrib_value'] = max_contrib_value
+                    iter_info['exceed_used'] = offset
+                    return (True, e_star, max_contrib_value, exceed_chances_remaining)
+            offset += 1
+        return (False, e_star, max_contrib_value, exceed_chances_remaining)
+
     def run(
         self,
         entities: Dict[str, Entity],
@@ -129,7 +229,7 @@ class AQAAlgorithm:
         initial_package: Optional[Package] = None
     ) -> Tuple[Package, Dict]:
         """
-        Run AQA algorithm.
+        Run PCS algorithm.
         
         Args:
             entities: Dictionary mapping entity_id to Entity
@@ -156,24 +256,34 @@ class AQAAlgorithm:
         
         # Get external entities
         external_entities = set(entities.keys()) - package.entities
-        
+
         iteration = 0
+        exceed_chances_remaining = self.exceed_number_of_chance
         metadata = {
             'iterations': [],
-            'final_score': 0.0
+            'final_score': (0.0, 0.0)  # (lb, ub) interval
         }
         
         while True:
             iteration += 1
             iter_info = {'iteration': iteration}
-            
-            # Step 1: Find entity with minimum contribution (e⁻)
+
+            pkg_score = self.scoring_function.compute_package_score(
+                package, entities, query, use_cache=True
+            )
+            print(f"  Iteration {iteration}: package = {sorted(package.entities)}  total score = {pkg_score}")
+
+            # Step 1: Find entity with minimum contribution (e⁻); contributions are (lb, ub)
             if not contributions:
                 break
             
-            min_entity = min(contributions.items(), key=lambda x: x[1])
+            def _midpoint(interval):
+                return (interval[0] + interval[1]) / 2.0
+
+            min_entity = min(contributions.items(), key=lambda x: _midpoint(x[1]))
             e_minus = min_entity[0]
-            delta_min = min_entity[1]
+            delta_min = min_entity[1]  # (lb, ub) range
+            delta_min_mid = _midpoint(delta_min)
             
             iter_info['e_minus'] = e_minus
             iter_info['delta_min'] = delta_min
@@ -182,22 +292,19 @@ class AQAAlgorithm:
             tp_scores = {}
             for ext_entity_id in external_entities:
                 E_X, Var_X = self.estimate_contribution_stats(
-                    ext_entity_id, package, entities, query
+                    ext_entity_id, package, entities, query, e_minus
                 )
                 
-                # Compute tail probability: TP(e) = 1 - Var(X_e) / (E[X_e] - δ_min)²
-                if E_X > delta_min:
-                    denominator = (E_X - delta_min) ** 2
-                    if denominator > 0:
-                        tp = 1 - (Var_X / denominator)
-                        tp = max(0.0, min(1.0, tp))  # Clamp to [0, 1]
-                    else:
-                        tp = 0.0
+                # TP(e) = 1 - Var(X_e) / (E[X_e] - δ_min)²; use midpoint of δ_min
+                denominator = (E_X - delta_min_mid) ** 2
+                if denominator > 0:
+                    tp = 1 - (Var_X / denominator)
+                    tp = abs(tp)  # Clamp to [0, 1]
                 else:
                     tp = 0.0
                 
                 tp_scores[ext_entity_id] = tp
-            
+
             # Step 3: Select top-s candidates
             sorted_tp = sorted(tp_scores.items(), key=lambda x: x[1], reverse=True)
             top_s_candidates = [eid for eid, _ in sorted_tp[:self.budget_rate]]
@@ -234,34 +341,42 @@ class AQAAlgorithm:
                 metadata['iterations'].append(iter_info)
                 break
             
-            max_contrib = max(exact_contributions.items(), key=lambda x: x[1])
+            max_contrib = max(
+                exact_contributions.items(),
+                key=lambda x: _midpoint(x[1])
+            )
             e_star = max_contrib[0]
-            max_contrib_value = max_contrib[1]
+            max_contrib_value = max_contrib[1]  # (lb, ub)
+            max_contrib_mid = _midpoint(max_contrib_value)
             
             iter_info['e_star'] = e_star
             iter_info['max_contrib_value'] = max_contrib_value
-            
-            # Step 7: Check if swap is beneficial
-            if max_contrib_value <= delta_min:
+
+            # Step 7: Check if swap is beneficial; if not, try next-s by TP up to exceed_number_of_chance times
+            swap_done, e_star, max_contrib_value, exceed_chances_remaining = self._try_beneficial_swap_or_exceed(
+                sorted_tp, e_minus, package, entities, query, delta_min_mid, iter_info,
+                exceed_chances_remaining, e_star, max_contrib_value, max_contrib_mid
+            )
+            if not swap_done:
                 iter_info['stop_reason'] = 'no_beneficial_swap'
                 metadata['iterations'].append(iter_info)
                 break
-            
+
             # Step 8: Perform swap
             package.remove(e_minus)
             package.add(e_star)
-            
+
             # Recompute contributions for all entities in package (they may have changed due to binary components)
             contributions = {}
             for entity_id in package.entities:
                 contributions[entity_id] = self.scoring_function.compute_contribution(
                     entity_id, package, entities, query, use_cache=True
                 )
-            
+
             # Update external entities
             external_entities.remove(e_star)
             external_entities.add(e_minus)
-            
+
             iter_info['swap_performed'] = True
             iter_info['stop_reason'] = 'continue'
             metadata['iterations'].append(iter_info)
@@ -272,6 +387,7 @@ class AQAAlgorithm:
         )
         metadata['final_score'] = final_score
         metadata['final_package'] = list(package.entities)
-        
+        print(f"  Done: package = {sorted(package.entities)}  total score = {final_score}")
+
         return package, metadata
 

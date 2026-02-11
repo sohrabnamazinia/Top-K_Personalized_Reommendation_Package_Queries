@@ -33,6 +33,13 @@ class LLMEvaluator:
         """Generate cache key for component value."""
         sorted_ids = tuple(sorted(entity_ids))
         return f"{component.name}:{sorted_ids}:{query}"
+
+    def get_component_value_if_cached(
+        self, component: Component, entity_ids: List[str], query: str
+    ) -> Optional[Tuple[float, float]]:
+        """Return (lower, upper) if this component value is cached, else None. Does not call LLM."""
+        key = self._get_cache_key(component, entity_ids, query)
+        return self._component_cache.get(key)
     
     def _parse_llm_response(self, response_content: str) -> Tuple[float, float]:
         """

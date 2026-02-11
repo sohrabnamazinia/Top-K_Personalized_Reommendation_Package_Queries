@@ -61,7 +61,7 @@ def test_algorithm():
         llm_evaluator=llm_evaluator,
         initial_packages=None,  # Will build all possible packages
         print_log=True,  # Enable detailed logging during execution
-        is_next_q_random=False
+        is_next_q_random=False,
     )
     
     print(f"  Initial packages: {algorithm.package_manager.get_package_count()}")

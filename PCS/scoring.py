@@ -1,4 +1,4 @@
-from typing import Dict, List, Set
+from typing import Dict, List, Set, Tuple
 import sys
 from pathlib import Path
 
@@ -7,6 +7,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.models import Package, Component, Entity
 from utils.llm_interface import LLMEvaluator
+
+
+# Default range for unknown component values (discrete uniform [MIN, MAX] inclusive)
+DEFAULT_MIN = 0.0
+DEFAULT_MAX = 1.0
 
 
 class ScoringFunction:
@@ -20,6 +25,34 @@ class ScoringFunction:
         """Generate key for caching component values."""
         sorted_ids = tuple(sorted(entity_ids))
         return f"{component.name}:{sorted_ids}:{query}"
+
+    def get_component_mean_variance(
+        self,
+        component: Component,
+        entity_ids: List[str],
+        query: str,
+        min_val: float = DEFAULT_MIN,
+        max_val: float = DEFAULT_MAX
+    ) -> Tuple[float, float]:
+        """
+        Return (mean, variance) for a component value.
+        If the value is cached (known), mean = midpoint of interval, variance = 0.
+        If unknown, model as discrete uniform on [min_val, max_val] (inclusive):
+          mean = (min_val + max_val) / 2
+          variance = ((max_val - min_val + 1)**2 - 1) / 12
+        """
+        cached = self.llm_evaluator.get_component_value_if_cached(
+            component, entity_ids, query
+        )
+        if cached is not None:
+            lb, ub = cached
+            mean = (lb + ub) / 2.0
+            return (mean, 0.0)
+        # Unknown: discrete uniform over [min_val, max_val] inclusive
+        # mean = (MIN + MAX) / 2; variance = ((MAX - MIN + 1)^2 - 1) / 12
+        mean = (min_val + max_val) / 2.0
+        variance = ((max_val - min_val + 1) ** 2 - 1) / 12.0
+        return (mean, variance)
     
     def probe_question(
         self,
@@ -28,9 +61,8 @@ class ScoringFunction:
         entity_ids: List[str],
         query: str,
         use_cache: bool = True
-    ) -> float:
-        """Probe a question (component value). Caching is handled by LLM evaluator."""
-        # Get value from LLM evaluator (handles its own caching)
+    ) -> Tuple[float, float]:
+        """Probe a question (component value). Returns (lower_bound, upper_bound) interval."""
         value = self.llm_evaluator.evaluate_component(
             component, entities, entity_ids, query, use_cache
         )
@@ -42,40 +74,36 @@ class ScoringFunction:
         entities: Dict[str, Entity],
         query: str,
         use_cache: bool = True
-    ) -> float:
+    ) -> Tuple[float, float]:
         """
-        Compute total score of a package.
+        Compute total score of a package as an interval [total_lb, total_ub].
+        Each component value is (lb, ub); intervals are summed.
         
-        Args:
-            package: The package to score
-            entities: Dictionary mapping entity_id to Entity
-            query: User query
-            use_cache: Whether to use cached component values
-            
         Returns:
-            Total score of the package
+            (total_lower_bound, total_upper_bound)
         """
-        total_score = 0.0
+        total_lb = 0.0
+        total_ub = 0.0
         entity_list = list(package.entities)
         
         for component in self.components:
             if component.dimension == 1:
-                # Unary component: one value per entity
                 for entity_id in entity_list:
-                    value = self.probe_question(
+                    lb, ub = self.probe_question(
                         component, entities, [entity_id], query, use_cache
                     )
-                    total_score += value
+                    total_lb += lb
+                    total_ub += ub
             elif component.dimension == 2:
-                # Binary component: one value per pair
                 for i in range(len(entity_list)):
                     for j in range(i + 1, len(entity_list)):
-                        value = self.probe_question(
+                        lb, ub = self.probe_question(
                             component, entities, [entity_list[i], entity_list[j]], query, use_cache
                         )
-                        total_score += value
+                        total_lb += lb
+                        total_ub += ub
         
-        return total_score
+        return (total_lb, total_ub)
     
     def compute_contribution(
         self,
@@ -84,32 +112,35 @@ class ScoringFunction:
         entities: Dict[str, Entity],
         query: str,
         use_cache: bool = True
-    ) -> float:
+    ) -> Tuple[float, float]:
         """
-        Compute contribution score of an entity in a package.
+        Compute contribution of an entity in a package as an interval [lb, ub].
+        Contribution = sum of all component value intervals involving this entity.
         
-        Contribution = sum of all component values involving this entity.
+        Returns:
+            (contribution_lower_bound, contribution_upper_bound)
         """
-        contribution = 0.0
+        contrib_lb = 0.0
+        contrib_ub = 0.0
         entity_list = list(package.entities)
         
         for component in self.components:
             if component.dimension == 1:
-                # Unary: only if this is the entity
                 if entity_id in package.entities:
-                    value = self.probe_question(
+                    lb, ub = self.probe_question(
                         component, entities, [entity_id], query, use_cache
                     )
-                    contribution += value
+                    contrib_lb += lb
+                    contrib_ub += ub
             elif component.dimension == 2:
-                # Binary: all pairs involving this entity
                 for other_id in entity_list:
                     if other_id != entity_id:
                         sorted_pair = sorted([entity_id, other_id])
-                        value = self.probe_question(
+                        lb, ub = self.probe_question(
                             component, entities, sorted_pair, query, use_cache
                         )
-                        contribution += value
+                        contrib_lb += lb
+                        contrib_ub += ub
         
-        return contribution
+        return (contrib_lb, contrib_ub)
 

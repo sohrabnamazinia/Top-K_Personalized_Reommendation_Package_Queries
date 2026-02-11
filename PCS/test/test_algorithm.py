@@ -1,28 +1,23 @@
-"""Test file 2: Test full AQA algorithm with logging."""
+"""Test file for PCS algorithm with logging."""
 import json
 from datetime import datetime
 import sys
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from utils.models import Entity, Package, Component
+from utils.models import Package, Component
 from utils.llm_interface import LLMEvaluator
-from algorithm import AQAAlgorithm
+from preprocessing.load_data import load_entities_from_csv
+from PCS.algorithm import PCSAlgorithm
 
 
 def test_algorithm():
-    """Test AQA algorithm with sample data."""
-    # Sample entities
-    entities = {
-        'e1': Entity(id='e1', name='Entity 1', data='Great product with excellent features'),
-        'e2': Entity(id='e2', name='Entity 2', data='Good quality and fast delivery'),
-        'e3': Entity(id='e3', name='Entity 3', data='Average product, could be better'),
-        'e4': Entity(id='e4', name='Entity 4', data='Outstanding service and support'),
-        'e5': Entity(id='e5', name='Entity 5', data='Decent product at reasonable price'),
-    }
-    
+    """Test PCS algorithm with sample data."""
+    csv_path = Path(__file__).parent.parent.parent / "data" / "sample_data.csv"
+    entities = load_entities_from_csv(str(csv_path))
+
     # Sample components
     components = [
         Component(
@@ -36,52 +31,39 @@ def test_algorithm():
             dimension=2
         )
     ]
-    
+
     # Test parameters
     k = 3
     n = len(entities)
     query = "Find products with good quality"
     budget_rate = 2
-    epsilon = 0.01
-    
-    # Optional: provide initial packages (list of Package objects)
-    # If None, algorithm will compute initial package
-    initial_packages = None
-    # Example: initial_packages = [Package(entities={'e1', 'e2', 'e3'})]
-    
+    epsilon = 0
+    # Initial package: False = random k entities, True = top-k by unary scores
+    smart_initial_package = True
+
     print(f"Test Parameters:")
     print(f"  k (package size): {k}")
     print(f"  n (number of entities): {n}")
     print(f"  Query: {query}")
     print(f"  Budget rate (s): {budget_rate}")
     print(f"  Epsilon: {epsilon}")
+    print(f"  Smart initial package: {smart_initial_package}")
     print(f"  Components: {[c.name for c in components]}")
     print()
-    
+
     # Initialize
     llm_evaluator = LLMEvaluator()
-    algorithm = AQAAlgorithm(
+    algorithm = PCSAlgorithm(
         components=components,
         llm_evaluator=llm_evaluator,
         budget_rate=budget_rate,
-        epsilon=epsilon
+        epsilon=epsilon,
+        smart_initial_package=smart_initial_package
     )
-    
+
     # Run algorithm
-    if initial_packages:
-        # If multiple initial packages provided, run for each
-        results = []
-        for init_pkg in initial_packages:
-            final_package, metadata = algorithm.run(
-                entities, k, query, initial_package=init_pkg
-            )
-            results.append((final_package, metadata))
-        
-        # Use first result for logging (or log all)
-        final_package, metadata = results[0]
-    else:
-        final_package, metadata = algorithm.run(entities, k, query)
-    
+    final_package, metadata = algorithm.run(entities, k, query)
+
     # Log results
     log_data = {
         'timestamp': datetime.now().isoformat(),
@@ -91,7 +73,7 @@ def test_algorithm():
             'query': query,
             'budget_rate': budget_rate,
             'epsilon': epsilon,
-            'components': [{'name': c.name, 'description': c.description, 'dimension': c.dimension} 
+            'components': [{'name': c.name, 'description': c.description, 'dimension': c.dimension}
                           for c in components]
         },
         'result': {
@@ -100,12 +82,15 @@ def test_algorithm():
             'iterations': metadata['iterations']
         }
     }
-    
+
     # Write to log file
-    log_filename = f"algorithm_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    import os
+    outputs_dir = os.path.join(os.path.dirname(__file__), 'outputs')
+    os.makedirs(outputs_dir, exist_ok=True)
+    log_filename = os.path.join(outputs_dir, f"pcs_algorithm_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
     with open(log_filename, 'w') as f:
         json.dump(log_data, f, indent=2)
-    
+
     print(f"Algorithm Results:")
     print(f"  Final Package: {list(final_package.entities)}")
     print(f"  Final Score: {metadata['final_score']}")
@@ -113,7 +98,7 @@ def test_algorithm():
     print()
     print(f"Detailed log saved to: {log_filename}")
     print()
-    
+
     # Print iteration details
     print("Iteration Details:")
     for iter_info in metadata['iterations']:
@@ -127,10 +112,9 @@ def test_algorithm():
             print(f"    Max contribution: {iter_info.get('max_contrib_value', 'N/A')}")
         print(f"    Stop reason: {iter_info.get('stop_reason', 'N/A')}")
         print()
-    
+
     return final_package, metadata
 
 
 if __name__ == "__main__":
     test_algorithm()
-

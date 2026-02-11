@@ -70,7 +70,7 @@ export OPENAI_API_KEY=your_api_key_here
 ```python
 from utils.models import Entity, Component
 from utils.llm_interface import LLMEvaluator
-from PCS.algorithm import AQAAlgorithm
+from PCS.algorithm import PCSAlgorithm
 
 # Define components
 components = [
@@ -80,7 +80,7 @@ components = [
 
 # Initialize
 llm_evaluator = LLMEvaluator(mock_api=False)  # Set to True for testing
-algorithm = AQAAlgorithm(components, llm_evaluator, budget_rate=5, epsilon=0.01)
+algorithm = PCSAlgorithm(components, llm_evaluator, budget_rate=5, epsilon=0.01)
 
 # Run algorithm
 entities = {...}  # Dictionary of Entity objects
