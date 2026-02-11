@@ -1,25 +1,52 @@
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 import random
 import os
+import time
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from .models import Component, Entity
 
+if TYPE_CHECKING:
+    from preprocessing.MGT import MGT
+
 
 class LLMEvaluator:
-    """Interface for evaluating component values using LLM."""
-    
-    def __init__(self, api_key: Optional[str] = None, model: str = "gpt-4o-mini", mock_api: bool = False):
+    """Interface for evaluating component values using LLM or materialized ground truth (MGT)."""
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: str = "gpt-4o-mini",
+        mock_api: bool = False,
+        use_MGT: bool = True,
+        entities_csv_path: Optional[str] = None,
+        components: Optional[List[Component]] = None,
+        output_dir: str = "mgt_Results",
+    ):
         """
         Initialize LLM evaluator.
-        
+
         Args:
             api_key: OpenAI API key (if None, uses environment variable)
             model: Model name to use
             mock_api: If True, returns random values instead of calling LLM
+            use_MGT: If True, read component values from MGT CSVs instead of calling LLM.
+                     Requires entities_csv_path and components; checks that CSVs exist.
+            entities_csv_path: Path to entities CSV (required when use_MGT=True)
+            components: List of Component (required when use_MGT=True)
+            output_dir: Directory for MGT CSVs (default mgt_Results)
         """
         self.mock_api = mock_api
-        if not mock_api:
+        self.use_MGT = use_MGT
+        self._mgt: Optional["MGT"] = None
+
+        if use_MGT:
+            if not entities_csv_path or not components:
+                raise ValueError("use_MGT is True but entities_csv_path and components are required")
+            from preprocessing.MGT import MGT
+            self._mgt = MGT(entities_csv_path, components)
+            self._mgt.load_from_existing(output_dir)
+        elif not mock_api:
             if api_key is None:
                 api_key = os.getenv('OPENAI_API_KEY')
             self.llm = ChatOpenAI(
@@ -27,7 +54,7 @@ class LLMEvaluator:
                 model=model,
                 temperature=0
             )
-        self._component_cache: Dict[str, Tuple[float, float]] = {}
+        self._component_cache: Dict[str, Tuple[float, float, float]] = {}
     
     def _get_cache_key(self, component: Component, entity_ids: List[str], query: str) -> str:
         """Generate cache key for component value."""
@@ -36,8 +63,8 @@ class LLMEvaluator:
 
     def get_component_value_if_cached(
         self, component: Component, entity_ids: List[str], query: str
-    ) -> Optional[Tuple[float, float]]:
-        """Return (lower, upper) if this component value is cached, else None. Does not call LLM."""
+    ) -> Optional[Tuple[float, float, float]]:
+        """Return (lower, upper, time) if this component value is cached, else None. Does not call LLM."""
         key = self._get_cache_key(component, entity_ids, query)
         return self._component_cache.get(key)
     
@@ -51,6 +78,7 @@ class LLMEvaluator:
         Returns:
             (lower_bound, upper_bound) tuple, both rounded to 1 decimal place
         """
+        print(response_content)  # Debug print to see raw response
         import re
         
         try:
@@ -98,40 +126,59 @@ class LLMEvaluator:
         entities: Dict[str, Entity],
         entity_ids: List[str],
         query: str,
-        use_cache: bool = True
-    ) -> Tuple[float, float]:
+        use_cache: bool = True,
+    ) -> Tuple[float, float, float]:
         """
-        Evaluate a component value using LLM, returning an interval [lower_bound, upper_bound].
-        
-        Args:
-            component: The component to evaluate
-            entities: Dictionary mapping entity_id to Entity
-            entity_ids: List of entity IDs (1 for unary, 2 for binary)
-            query: User query string
-            use_cache: Whether to use cached values
-            
-        Returns:
-            Component value as (lower_bound, upper_bound) tuple
+        Evaluate a component value: from MGT if use_MGT else from LLM.
+        Returns (lower_bound, upper_bound, time_taken) tuple.
         """
         if component.dimension != len(entity_ids):
             raise ValueError(f"Component dimension {component.dimension} doesn't match {len(entity_ids)} entities")
-        
-        # Check cache
+
         cache_key = self._get_cache_key(component, entity_ids, query)
         if use_cache and cache_key in self._component_cache:
             return self._component_cache[cache_key]
-        
-        # If mock_api is True, return random interval instead of calling LLM
+
+        if self.use_MGT and self._mgt is not None:
+            value = self._evaluate_component_mgt(component, entity_ids, use_cache, cache_key)
+        else:
+            value = self._evaluate_component_llm(component, entities, entity_ids, query, use_cache, cache_key)
+        return value
+
+    def _evaluate_component_mgt(
+        self,
+        component: Component,
+        entity_ids: List[str],
+        use_cache: bool,
+        cache_key: str,
+    ) -> Tuple[float, float, float]:
+        """Read (lb, ub, time) from MGT CSV and optionally cache."""
+        lb, ub, time_val = self._mgt.fetch(component.name, entity_ids)
+        value = (float(lb), float(ub), float(time_val))
+        if use_cache:
+            self._component_cache[cache_key] = value
+        return value
+
+    def _evaluate_component_llm(
+        self,
+        component: Component,
+        entities: Dict[str, Entity],
+        entity_ids: List[str],
+        query: str,
+        use_cache: bool,
+        cache_key: str,
+    ) -> Tuple[float, float, float]:
+        """Call LLM to evaluate component; returns (lower_bound, upper_bound, time_taken)."""
+        t0 = time.perf_counter()
         if self.mock_api:
-            # Return exact same value for both bounds
             val = round(random.uniform(0.0, 1.0), 1)
-            lb = val
-            ub = val  # Same value for both bounds
-            value = (lb, ub)
+            lb = ub = val
+            elapsed = time.perf_counter() - t0
+            value = (lb, ub, round(elapsed, 4))
             if use_cache:
                 self._component_cache[cache_key] = value
             return value
-        
+
         # Build prompt
         entity_info = []
         for i, eid in enumerate(entity_ids):
@@ -177,12 +224,10 @@ Evaluate the {component.name} component value. Return only two float numbers (lo
             ("human", human_prompt)
         ])
         
-        # Query LLM
         response = self.llm.invoke(prompt.format_messages())
-        value = self._parse_llm_response(response.content)
-        
-        # Cache result
+        lb, ub = self._parse_llm_response(response.content)
+        elapsed = time.perf_counter() - t0
+        value = (lb, ub, round(elapsed, 4))
         if use_cache:
             self._component_cache[cache_key] = value
-        
         return value

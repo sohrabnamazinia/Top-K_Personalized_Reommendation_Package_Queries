@@ -45,7 +45,7 @@ class ScoringFunction:
             component, entity_ids, query
         )
         if cached is not None:
-            lb, ub = cached
+            lb, ub, _ = cached
             mean = (lb + ub) / 2.0
             return (mean, 0.0)
         # Unknown: discrete uniform over [min_val, max_val] inclusive
@@ -63,10 +63,10 @@ class ScoringFunction:
         use_cache: bool = True
     ) -> Tuple[float, float]:
         """Probe a question (component value). Returns (lower_bound, upper_bound) interval."""
-        value = self.llm_evaluator.evaluate_component(
+        lb, ub, _ = self.llm_evaluator.evaluate_component(
             component, entities, entity_ids, query, use_cache
         )
-        return value
+        return (lb, ub)
     
     def compute_package_score(
         self,

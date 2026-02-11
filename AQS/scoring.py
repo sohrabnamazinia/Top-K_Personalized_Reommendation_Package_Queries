@@ -58,14 +58,14 @@ class ScoringFunction:
         key = self._get_component_value_key(component, entity_ids, query)
         
         # Get value from LLM evaluator (handles its own caching)
-        value = self.llm_evaluator.evaluate_component(
+        lb, ub, _ = self.llm_evaluator.evaluate_component(
             component, entities, entity_ids, query, use_cache
         )
         
         # Remove from unknown questions (mark as answered)
         self._unknown_questions.discard(key)
         
-        return value
+        return (lb, ub)
     
     def is_component_value_unknown(
         self,

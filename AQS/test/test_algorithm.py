@@ -10,13 +10,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from utils.models import Entity, Component
 from utils.llm_interface import LLMEvaluator
 from preprocessing.load_data import load_entities_from_csv
+from BASELINE.algorithm import ExactBaseline
 from AQS.algorithm import AQSAlgorithm
 
 
 def test_algorithm():
     """Test AQS algorithm with sample data."""
     csv_path = Path(__file__).parent.parent.parent / "data" / "sample_data.csv"
-    entities = load_entities_from_csv(str(csv_path))
+    entities = dict(list(load_entities_from_csv(str(csv_path)).items())[:10])
 
     # Components
     components = [
@@ -46,10 +47,17 @@ def test_algorithm():
     print(f"Query: {query}")
     print(f"Components: {[c.name for c in components]}")
     print()
-    
-    # Initialize LLM evaluator (use mock for testing)
-    llm_evaluator = LLMEvaluator(mock_api=True)
-    
+
+    # Exact baseline
+    llm_evaluator = LLMEvaluator(mock_api=False, use_MGT=True, components=components, entities_csv_path=csv_path)
+    baseline = ExactBaseline(components, llm_evaluator)
+    baseline_package, baseline_scores = baseline.run(entities, query, k)
+    print("Exact baseline:")
+    print(f"  Best package: {sorted(baseline_package.entities)}")
+    print(f"  Best score (midpoint): {baseline_scores[0] if baseline_scores else 'N/A'}")
+    print(f"  All scores (top 5): {baseline_scores[:5]}")
+    print()
+
     # Initialize algorithm
     print("Initializing AQS algorithm...")
     algorithm = AQSAlgorithm(
