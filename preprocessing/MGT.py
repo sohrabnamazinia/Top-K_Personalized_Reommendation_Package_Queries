@@ -8,7 +8,7 @@ import os
 import random
 import re
 import time
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from utils.models import Component, Entity
 from utils.llm_interface import LLMEvaluator
@@ -91,32 +91,85 @@ class MGT:
         self._csv_paths: Dict[str, str] = {}
         self._n: int = 0  # number of entities (parsed from filename)
 
-    def load_from_existing(self, output_dir: str = "mgt_Results") -> None:
+    def _n_from_path(self, path: str) -> int:
+        m = re.search(r"_(\d+)\.csv$", path)
+        return int(m.group(1)) if m else 0
+
+    def ensure_mgt_for_n(self, output_dir: str, n: int) -> None:
         """
-        Find MGT CSVs for each component and verify they exist.
-        Parses n (entity count) from filename for O(1) row index calculation.
-        Raises FileNotFoundError if a CSV is missing.
+        Ensure MGT CSVs for exactly n entities exist. If not, build them by slicing
+        a larger-n MGT file (same component name/desc) if one exists.
+        """
+        os.makedirs(output_dir, exist_ok=True)
+        for comp in self.components:
+            pattern = os.path.join(output_dir, f"MGT_{comp.name}_*.csv")
+            candidates = glob.glob(pattern)
+            # Check if we already have exact n
+            for path in candidates:
+                if self._n_from_path(path) == n:
+                    break
+            else:
+                # No exact match: find smallest file with n_large >= n
+                with_n = [(p, self._n_from_path(p)) for p in candidates if self._n_from_path(p) >= n]
+                if not with_n:
+                    raise FileNotFoundError(
+                        f"No MGT CSV for component '{comp.name}' with n>={n}. "
+                        f"Found only: {[self._n_from_path(p) for p in candidates]}. Run generate() for at least n={n} entities first."
+                    )
+                source_path = min(with_n, key=lambda x: x[1])[0]
+                slug_match = re.search(
+                    r"MGT_" + re.escape(comp.name) + r"_(.+)_\d+\.csv$",
+                    os.path.basename(source_path),
+                )
+                slug = slug_match.group(1) if slug_match else _slug(comp.description)
+                out_fname = f"MGT_{comp.name}_{slug}_{n}.csv"
+                out_path = os.path.join(output_dir, out_fname)
+                with open(source_path, "r", encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    fieldnames = reader.fieldnames
+                    rows = list(reader)
+                if comp.dimension == 1:
+                    take = min(n, len(rows))
+                    subset = rows[:take]
+                else:
+                    take = min(n * (n - 1) // 2, len(rows))
+                    subset = rows[:take]
+                with open(out_path, "w", newline="", encoding="utf-8") as f:
+                    w = csv.DictWriter(f, fieldnames=fieldnames)
+                    w.writeheader()
+                    w.writerows(subset)
+
+    def load_from_existing(self, output_dir: str = "mgt_Results", n: Optional[int] = None) -> None:
+        """
+        Find MGT CSVs for each component for entity count n.
+        n: required when multiple MGT files may exist; only files ending _n.csv are used.
+        If n is None, uses the file with largest n per component (backward compat).
+        Raises FileNotFoundError if a matching CSV is missing.
         """
         self._csv_paths = {}
         missing = []
         for comp in self.components:
             pattern = os.path.join(output_dir, f"MGT_{comp.name}_*.csv")
             candidates = glob.glob(pattern)
-            if len(candidates) != 1:
-                if not candidates:
-                    missing.append(pattern)
-                else:
-                    missing.append(f"multiple or no match for {pattern}")
+            if not candidates:
+                missing.append(pattern if n is None else f"MGT for n={n} not found: {pattern}")
                 continue
-            path = candidates[0]
+            if n is not None:
+                matching = [p for p in candidates if self._n_from_path(p) == n]
+                if not matching:
+                    missing.append(f"MGT for n={n} not found: {pattern}")
+                    continue
+                path = matching[0]
+                self._n = n
+            else:
+                path = max(candidates, key=self._n_from_path)
+                n_parsed = self._n_from_path(path)
+                if n_parsed:
+                    self._n = n_parsed
             self._csv_paths[comp.name] = path
-            # Parse n from filename (MGT_{name}_{slug}_{n}.csv)
-            m = re.search(r"_(\d+)\.csv$", path)
-            if m:
-                self._n = int(m.group(1))
         if missing:
             raise FileNotFoundError(
-                "use_MGT is set to True but MGT CSV files do not exist: " + ", ".join(missing)
+                "use_MGT is set to True but MGT CSV files do not exist: " + "; ".join(missing)
             )
 
     def generate(

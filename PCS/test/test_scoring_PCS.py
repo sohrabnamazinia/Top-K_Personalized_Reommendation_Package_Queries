@@ -37,8 +37,8 @@ def test_scoring(n, k, package, entities, components=None, query="Find products 
             )
         ]
 
-    # Initialize LLM evaluator (requires OPENAI_API_KEY in environment)
-    llm_evaluator = LLMEvaluator()
+    # Initialize LLM evaluator (use_MGT=False so test runs without MGT CSVs; set mock_api=True for no API key)
+    llm_evaluator = LLMEvaluator(use_MGT=False, mock_api=True)
     scoring_function = ScoringFunction(components, llm_evaluator)
 
     print(f"Test Parameters:")

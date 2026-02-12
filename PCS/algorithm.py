@@ -22,18 +22,19 @@ class PCSAlgorithm:
         budget_rate: int = 5,
         epsilon: float = 0.01,
         smart_initial_package: bool = True,
-        exceed_number_of_chance: int = 3
+        exceed_number_of_chance: Optional[int] = None,
     ):
         """
         Initialize PCS algorithm.
-        
+
         Args:
             components: List of components
             llm_evaluator: LLM evaluator instance
             budget_rate: Number of top candidates to evaluate exactly (s)
             epsilon: Convergence threshold
             smart_initial_package: If True, initial package is top-k by unary scores; if False, k entities chosen at random.
-            exceed_number_of_chance: When no_beneficial_swap, try next-s-by-TP up to this many times across the run (default 3).
+            exceed_number_of_chance: When no_beneficial_swap, try next-s-by-TP up to this many times across the run.
+                If None, set at run() to max(1, int(sqrt(n))) where n = number of entities.
         """
         self.components = components
         self.scoring_function = ScoringFunction(components, llm_evaluator)
@@ -256,6 +257,11 @@ class PCSAlgorithm:
         
         # Get external entities
         external_entities = set(entities.keys()) - package.entities
+
+        # Default exceed_number_of_chance from n if not set (scale with sqrt(n))
+        if self.exceed_number_of_chance is None:
+            n = len(entities)
+            self.exceed_number_of_chance = max(1, int(np.sqrt(n)))
 
         iteration = 0
         exceed_chances_remaining = self.exceed_number_of_chance

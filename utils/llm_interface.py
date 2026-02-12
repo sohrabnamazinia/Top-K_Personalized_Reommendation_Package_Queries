@@ -22,6 +22,7 @@ class LLMEvaluator:
         entities_csv_path: Optional[str] = None,
         components: Optional[List[Component]] = None,
         output_dir: str = "mgt_Results",
+        n: Optional[int] = None,
     ):
         """
         Initialize LLM evaluator.
@@ -31,10 +32,11 @@ class LLMEvaluator:
             model: Model name to use
             mock_api: If True, returns random values instead of calling LLM
             use_MGT: If True, read component values from MGT CSVs instead of calling LLM.
-                     Requires entities_csv_path and components; checks that CSVs exist.
+                     Requires entities_csv_path, components, and n.
             entities_csv_path: Path to entities CSV (required when use_MGT=True)
             components: List of Component (required when use_MGT=True)
             output_dir: Directory for MGT CSVs (default mgt_Results)
+            n: Number of entities (required when use_MGT=True). If MGT for n does not exist, it is built by slicing a larger-n MGT if available.
         """
         self.mock_api = mock_api
         self.use_MGT = use_MGT
@@ -43,9 +45,12 @@ class LLMEvaluator:
         if use_MGT:
             if not entities_csv_path or not components:
                 raise ValueError("use_MGT is True but entities_csv_path and components are required")
+            if n is None:
+                raise ValueError("use_MGT is True but n (number of entities) is required")
             from preprocessing.MGT import MGT
             self._mgt = MGT(entities_csv_path, components)
-            self._mgt.load_from_existing(output_dir)
+            self._mgt.ensure_mgt_for_n(output_dir, n)
+            self._mgt.load_from_existing(output_dir, n=n)
         elif not mock_api:
             if api_key is None:
                 api_key = os.getenv('OPENAI_API_KEY')
@@ -138,7 +143,6 @@ class LLMEvaluator:
         cache_key = self._get_cache_key(component, entity_ids, query)
         if use_cache and cache_key in self._component_cache:
             return self._component_cache[cache_key]
-
         if self.use_MGT and self._mgt is not None:
             value = self._evaluate_component_mgt(component, entity_ids, use_cache, cache_key)
         else:

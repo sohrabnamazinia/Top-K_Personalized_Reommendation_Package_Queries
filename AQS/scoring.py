@@ -56,7 +56,6 @@ class ScoringFunction:
             self._initialize_unknown_questions(entities, query)
         
         key = self._get_component_value_key(component, entity_ids, query)
-        
         # Get value from LLM evaluator (handles its own caching)
         lb, ub, _ = self.llm_evaluator.evaluate_component(
             component, entities, entity_ids, query, use_cache

@@ -2,5 +2,7 @@ venv
 __pycache__/
 AQS/outputs
 AQS/test/outputs/
+AQS/test/outputs_summary/*
 PCS/test/outputs/
+PCS/test/outputs_summary/*
 mgt_Results/

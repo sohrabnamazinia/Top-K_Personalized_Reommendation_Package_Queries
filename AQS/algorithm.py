@@ -1,6 +1,7 @@
 from typing import List, Dict, Set, Tuple, Optional
 import sys
 import random
+import math
 from pathlib import Path
 
 # Add parent directory to path for imports
@@ -26,11 +27,12 @@ class AQSAlgorithm:
         initial_packages: Optional[List[Package]] = None,
         print_log: bool = False,
         init_dim_1: bool = True,
-        is_next_q_random: bool = False
+        is_next_q_random: bool = False,
+        heuristic_top_packages_pct: float = 0.1,
     ):
         """
         Initialize AQS algorithm.
-        
+
         Args:
             entities: Dictionary mapping entity_id to Entity
             components: List of components
@@ -42,6 +44,7 @@ class AQSAlgorithm:
             print_log: If True, print detailed logs for each iteration
             init_dim_1: If True, preprocess by asking all dimension 1 (unary) questions and updating bounds
             is_next_q_random: If True, randomly select next question instead of using heuristic evaluation
+            heuristic_top_packages_pct: Only compute heuristic for questions that affect the top x%% of packages by lower bound (default 0.1).
         """
         self.entities = entities
         self.components = components
@@ -51,6 +54,7 @@ class AQSAlgorithm:
         self.llm_evaluator = llm_evaluator
         self.print_log = print_log
         self.is_next_q_random = is_next_q_random
+        self.heuristic_top_packages_pct = heuristic_top_packages_pct
         self.scoring_function = ScoringFunction(components, llm_evaluator, entities, query)
         
         # Initialize package manager
@@ -96,22 +100,22 @@ class AQSAlgorithm:
     def _preprocess_dimension_1(self):
         """Preprocess by asking all dimension 1 (unary) questions, updating bounds, and pruning packages."""
         # Find all dimension 1 questions
+        print("Preprocessing: asking all dimension 1 questions...")
         dim_1_questions = []
         for question in list(self.unknown_questions):
             component_name, entity_ids_tuple = question
             component = next(c for c in self.components if c.name == component_name)
             if component.dimension == 1:
                 dim_1_questions.append(question)
-        
         # Ask each dimension 1 question
         for question in dim_1_questions:
+
             component, entity_ids = self._question_to_component_entities(question)
             
             # Probe the question to get response
             response = self.scoring_function.probe_question(
                 component, self.entities, entity_ids, self.query, use_cache=True
             )
-            
             # Update bounds for affected packages
             affected_packages = self.package_manager.update_bounds(component, entity_ids, response)
             
@@ -270,7 +274,7 @@ class AQSAlgorithm:
             bounds_copy.pop(key, None)
         
         return bounds_copy, packages_copy
-    
+
     def heuristic_evaluation(
         self,
         question: Tuple[str, Tuple[str, ...]]
@@ -404,12 +408,17 @@ class AQSAlgorithm:
         
         while self.unknown_questions:
             iteration += 1
+            n_unknown = len(self.unknown_questions)
+            if self.print_log:
+                print(f"  Iteration {iteration} (unknown questions: {n_unknown})...")
             iter_info = {'iteration': iteration}
             
             # Identify current super-candidate
             super_candidate = self.identify_current_super_candidate()
             if super_candidate is None:
                 break
+
+            print(f"  Super candidate: {list(super_candidate.entities)}")
             
             iter_info['super_candidate'] = list(super_candidate.entities)
             iter_info['super_candidate_bounds'] = self.package_manager.get_bounds(super_candidate)
@@ -421,6 +430,7 @@ class AQSAlgorithm:
                 metadata['iterations'].append(iter_info)
                 break
             
+            print(f"  Alpha top condition not met")
             iter_info['alpha_top_condition_met'] = False
             
             # Select next question based on mode
@@ -434,14 +444,26 @@ class AQSAlgorithm:
                 iter_info['selected_question'] = str(best_question)
                 iter_info['selection_mode'] = 'random'
             else:
-                # Heuristic-based selection: evaluate heuristics for all unknown questions
-                heuristic_values = {}
-                for question in self.unknown_questions:
-                    # Note: This is expensive - in practice, you might want to cache or optimize
-                    heuristic_values[question] = self.heuristic_evaluation(question)
-                
+                # Heuristic-based selection: only evaluate heuristic for questions affecting top x% packages (by lower bound)
+                packages = self.package_manager.get_packages()
+                n_pkg = len(packages)
+                top_n = max(1, math.ceil(self.heuristic_top_packages_pct * n_pkg))
+                sorted_by_lb = sorted(
+                    packages,
+                    key=lambda p: self.package_manager.get_bounds(p)[0],
+                    reverse=True,
+                )
+                top_packages = sorted_by_lb[:top_n]
+                questions_affecting_top = set()
+                for pkg in top_packages:
+                    questions_affecting_top |= self.package_manager._get_questions_for_package(pkg)
+                questions_to_eval = self.unknown_questions & questions_affecting_top
+                if not questions_to_eval:
+                    questions_to_eval = self.unknown_questions
+                if self.print_log:
+                    print(f"  Heuristic: evaluating {len(questions_to_eval)} questions (top {top_n}/{n_pkg} packages)")
+                heuristic_values = {q: self.heuristic_evaluation(q) for q in questions_to_eval}
                 iter_info['heuristic_values'] = {str(q): v for q, v in heuristic_values.items()}
-                
                 # Select question with minimum heuristic
                 if not heuristic_values:
                     iter_info['stop_reason'] = 'no_questions_available'
