@@ -177,14 +177,21 @@ class MGT:
         llm_evaluator: LLMEvaluator,
         query: str,
         output_dir: str = "mgt_Results",
+        n: Optional[int] = None,
     ) -> Dict[str, str]:
         """
         One-time process: run LLM calls (or 1/uniform_every_k), write one CSV per component.
         Uses entities_csv_path only here to load entities and build row order.
-        Calls _evaluate_component_llm directly so the LLM is used even when evaluator has use_MGT=True.
+
+        Args:
+            n: If set, use only the first n entities (after sorting by entity_id). If None, use all entities in the CSV.
         """
-        entities = load_entities_from_csv(self.entities_csv_path)
-        entity_ids_sorted = sorted(entities.keys(), key=_entity_id_sort_key)
+        entities_all = load_entities_from_csv(self.entities_csv_path)
+        entity_ids_sorted = sorted(entities_all.keys(), key=_entity_id_sort_key)
+        if n is not None:
+            entity_ids_sorted = entity_ids_sorted[:n]
+        entities = {eid: entities_all[eid] for eid in entity_ids_sorted}
+
         pairs_sorted = []
         for i in range(len(entity_ids_sorted)):
             for j in range(i + 1, len(entity_ids_sorted)):

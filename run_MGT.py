@@ -17,9 +17,13 @@ from preprocessing.MGT import MGT
 
 
 def main():
-    csv_path = ROOT / "data" / "sample_data.csv"
-    query = "Find products with good quality"
-    uniform_every_k = 20  # Set to None to disable uniform sampling
+    csv_path = ROOT / "data" / "hotels_dataset.csv"
+    query = "good hotels highly rated but diverse in location"
+
+    # Number of entities to use (first n after sorting by entity_id). None = use all in CSV.
+    N_ENTITIES = 5
+
+    uniform_every_k = 2 # Set to None to disable uniform sampling
 
     if not csv_path.exists():
         print(f"Dataset not found: {csv_path}")
@@ -28,12 +32,12 @@ def main():
     components = [
         Component(
             name="relevance",
-            description="Relevance of the entity with the user query",
+            description="good highly rated hotels",
             dimension=1,
         ),
         Component(
             name="diversity",
-            description="Diversity between two entities",
+            description="diverse in location",
             dimension=2,
         ),
     ]
@@ -47,8 +51,8 @@ def main():
     mgt = MGT(entities_csv_path=str(csv_path), components=components, uniform_every_k=uniform_every_k)
 
     print(f"Generating MGT for {csv_path} (query: {query})")
-    print(f"Output dir: {output_dir}")
-    paths = mgt.generate(llm_evaluator, query, output_dir=str(output_dir))
+    print(f"Output dir: {output_dir}  |  n_entities: {N_ENTITIES or 'all'}")
+    paths = mgt.generate(llm_evaluator, query, output_dir=str(output_dir), n=N_ENTITIES)
     print("Done. Written:")
     for name, path in paths.items():
         print(f"  {name}: {path}")
