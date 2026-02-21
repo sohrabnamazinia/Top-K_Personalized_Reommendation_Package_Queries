@@ -17,13 +17,13 @@ from preprocessing.MGT import MGT
 
 
 def main():
-    csv_path = ROOT / "data" / "hotels_dataset.csv"
-    query = "good hotels highly rated but diverse in location"
+    csv_path = ROOT / "data" / "movies_dataset.csv"
+    query = "package of high-quality movies about space exploration and astronauts that feel realistic and scientifically grounded. The set should be diverse in tone and perspective (e.g., survival-focused, philosophical, political, emotional), so the movies don’t all tell the same kind of story."
 
     # Number of entities to use (first n after sorting by entity_id). None = use all in CSV.
-    N_ENTITIES = 5
+    N_ENTITIES = 10000
 
-    uniform_every_k = 2 # Set to None to disable uniform sampling
+    uniform_every_k = 10000 # Set to None to disable uniform sampling
 
     if not csv_path.exists():
         print(f"Dataset not found: {csv_path}")
