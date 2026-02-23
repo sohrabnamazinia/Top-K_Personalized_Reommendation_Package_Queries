@@ -183,25 +183,32 @@ class LLMEvaluator:
                 self._component_cache[cache_key] = value
             return value
 
+        # Escape curly braces so LangChain template parser treats them as literal (e.g. Wikipedia {{...}} in entity data)
+        def _escape_braces(s: str) -> str:
+            return (s or "").replace("{", "{{").replace("}", "}}")
+
         # Build prompt
         entity_info = []
         for i, eid in enumerate(entity_ids):
             entity = entities[eid]
-            entity_info.append(f"Entity {i+1} (ID: {entity.id}, Name: {entity.name}, Data: {entity.data})")
-        
+            entity_info.append(f"Entity {i+1} (ID: {_escape_braces(entity.id)}, Name: {_escape_braces(entity.name)}, Data: {_escape_braces(entity.data)})")
+
+        query_esc = _escape_braces(query)
+        desc_esc = _escape_braces(component.description)
+
         # Build comprehensive system prompt
         if component.dimension == 1:
             dimension_explanation = f"""This is a UNARY component, meaning you need to evaluate the {component.name} component value for a SINGLE entity with respect to the user query. You will be given one entity and a user query. Your task is to assess how well this entity satisfies the {component.name} criterion in the context of the query."""
         else:
             dimension_explanation = f"""This is a BINARY component, meaning you need to evaluate the {component.name} component value between TWO entities. You will be given two entities. Your task is to assess the {component.name} relationship or comparison between these two entities."""
-        
+
         system_prompt = f"""You are part of a top-k retrieval system for multimodal data, formulated as a package query problem. In this system, we need to find the best set of k entities that maximize an objective function composed of multiple components.
 
 Your specific role is to evaluate ONE component value, which we call "{component.name}".
 
 Component Details:
 - Component Name: {component.name}
-- Component Description: {component.description}
+- Component Description: {desc_esc}
 - Component Dimension: {component.dimension} ({'unary' if component.dimension == 1 else 'binary'})
 
 {dimension_explanation}
@@ -216,7 +223,7 @@ CRITICAL REQUIREMENTS:
 
 Your response should be two floats between 0 and 1 separated by a comma where both values are EXACTLY THE SAME (e.g., "0.5, 0.5"), nothing else."""
 
-        human_prompt = f"""User Query: {query}
+        human_prompt = f"""User Query: {query_esc}
 
 Entity Information:
 {chr(10).join(entity_info)}
