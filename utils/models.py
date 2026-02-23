@@ -4,10 +4,11 @@ from typing import List, Set, Optional
 
 @dataclass
 class Entity:
-    """Represents an entity with id, name, and data."""
+    """Represents an entity with id, name, data, and optional image_id for vision."""
     id: str
     name: str
     data: str
+    image_id: Optional[str] = None
 
 
 @dataclass

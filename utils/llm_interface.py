@@ -1,9 +1,12 @@
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
+import base64
 import random
 import os
 import time
+from pathlib import Path
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage, SystemMessage
 from .models import Component, Entity
 
 if TYPE_CHECKING:
@@ -23,6 +26,7 @@ class LLMEvaluator:
         components: Optional[List[Component]] = None,
         output_dir: str = "mgt_Results",
         n: Optional[int] = None,
+        images_base_path: Optional[str] = None,
     ):
         """
         Initialize LLM evaluator.
@@ -37,10 +41,13 @@ class LLMEvaluator:
             components: List of Component (required when use_MGT=True)
             output_dir: Directory for MGT CSVs (default mgt_Results)
             n: Number of entities (required when use_MGT=True). If MGT for n does not exist, it is built by slicing a larger-n MGT if available.
+            images_base_path: Optional directory to resolve entity image_id to image files (e.g. for Yelp: path to photos folder).
+                             Used only for dimension-1 components when making real LLM calls; if entity has image_id and file exists, image is sent to the LLM.
         """
         self.mock_api = mock_api
         self.use_MGT = use_MGT
         self._mgt: Optional["MGT"] = None
+        self.images_base_path = images_base_path
 
         if use_MGT:
             if not entities_csv_path or not components:
@@ -230,12 +237,44 @@ Entity Information:
 
 Evaluate the {component.name} component value. Return only two float numbers (lower_bound, upper_bound) separated by a comma, both in range [0, 1]. IMPORTANT: Both values must be EXACTLY THE SAME (e.g., "0.5, 0.5"):"""
 
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            ("human", human_prompt)
-        ])
+        # Dimension 1 + real LLM + entity has image_id + images_base_path set: include image in the request
+        use_image = (
+            component.dimension == 1
+            and self.images_base_path
+            and len(entity_ids) == 1
+            and getattr(entities[entity_ids[0]], "image_id", None)
+        )
+        image_data_url = None
+        if use_image:
+            entity = entities[entity_ids[0]]
+            image_id = getattr(entity, "image_id", None)
+            if image_id:
+                base_path = Path(self.images_base_path)
+                for ext in (".jpg", ".jpeg", ".png", ""):
+                    img_path = base_path / f"{image_id}{ext}" if ext else base_path / image_id
+                    if img_path.is_file():
+                        try:
+                            b64 = base64.standard_b64encode(img_path.read_bytes()).decode("ascii")
+                            mime = "image/jpeg" if img_path.suffix.lower() in (".jpg", ".jpeg") else "image/png"
+                            image_data_url = f"data:{mime};base64,{b64}"
+                        except Exception:
+                            pass
+                        break
+
+        if image_data_url:
+            content = [
+                {"type": "text", "text": human_prompt},
+                {"type": "image_url", "image_url": {"url": image_data_url}},
+            ]
+            messages = [SystemMessage(content=system_prompt), HumanMessage(content=content)]
+            response = self.llm.invoke(messages)
+        else:
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
+                ("human", human_prompt)
+            ])
+            response = self.llm.invoke(prompt.format_messages())
         
-        response = self.llm.invoke(prompt.format_messages())
         lb, ub = self._parse_llm_response(response.content)
         elapsed = time.perf_counter() - t0
         value = (lb, ub, round(elapsed, 4))
