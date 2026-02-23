@@ -194,11 +194,19 @@ class LLMEvaluator:
         def _escape_braces(s: str) -> str:
             return (s or "").replace("{", "{{").replace("}", "}}")
 
+        # Truncate entity data to avoid context length overflow (e.g. Yelp entities with many reviews)
+        MAX_ENTITY_DATA_CHARS = 10_000
+        def _truncate_data(s: str) -> str:
+            if not s or len(s) <= MAX_ENTITY_DATA_CHARS:
+                return s
+            return s[:MAX_ENTITY_DATA_CHARS] + "\n\n[... truncated for context length ...]"
+
         # Build prompt
         entity_info = []
         for i, eid in enumerate(entity_ids):
             entity = entities[eid]
-            entity_info.append(f"Entity {i+1} (ID: {_escape_braces(entity.id)}, Name: {_escape_braces(entity.name)}, Data: {_escape_braces(entity.data)})")
+            data_trunc = _truncate_data(entity.data)
+            entity_info.append(f"Entity {i+1} (ID: {_escape_braces(entity.id)}, Name: {_escape_braces(entity.name)}, Data: {_escape_braces(data_trunc)})")
 
         query_esc = _escape_braces(query)
         desc_esc = _escape_braces(component.description)
