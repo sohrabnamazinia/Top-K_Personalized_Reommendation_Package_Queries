@@ -209,10 +209,16 @@ class MGT:
             self._csv_paths[comp.name] = path
 
             if comp.dimension == 1:
+                total = len(entity_ids_sorted)
+                last_pct = -1
                 with open(path, "w", newline="", encoding="utf-8") as f:
                     w = csv.writer(f)
                     w.writerow(["entity_id", "score_lb", "score_ub", "time"])
                     for idx, eid in enumerate(entity_ids_sorted):
+                        pct = int(100 * (idx + 1) / total) if total else 100
+                        if pct > last_pct and pct % 1 == 0:
+                            print(f"  Component {comp.name}: {pct}% done")
+                            last_pct = pct
                         do_call = (idx % self.uniform_every_k) == 0
                         if do_call:
                             cache_key = llm_evaluator._get_cache_key(comp, [eid], query)
@@ -225,10 +231,16 @@ class MGT:
                             w.writerow([eid, lb, ub, f"{_synthetic_time():.4f}"])
 
             elif comp.dimension == 2:
+                total = len(pairs_sorted)
+                last_pct = -1
                 with open(path, "w", newline="", encoding="utf-8") as f:
                     w = csv.writer(f)
                     w.writerow(["entity_id_1", "entity_id_2", "score_lb", "score_ub", "time"])
                     for idx, (e1, e2) in enumerate(pairs_sorted):
+                        pct = int(100 * (idx + 1) / total) if total else 100
+                        if pct > last_pct and pct % 1 == 0:
+                            print(f"  Component {comp.name}: {pct}% done")
+                            last_pct = pct
                         do_call = (idx % self.uniform_every_k) == 0
                         if do_call:
                             cache_key = llm_evaluator._get_cache_key(comp, [e1, e2], query)
