@@ -8,3 +8,4 @@ PCS/test/outputs_summary/*
 mgt_Results/
 data/*
 .DS_STORE
+scalability_outputs/*
