@@ -434,7 +434,9 @@ class AQSAlgorithm:
             if super_candidate is None:
                 break
 
-            print(f"  Super candidate: {list(super_candidate.entities)}")
+            n_remaining = len(self.package_manager.get_packages())
+            pct_pruned = (100.0 * (self.initial_package_count - n_remaining) / self.initial_package_count) if self.initial_package_count else 0.0
+            print(f"  Super candidate: {list(super_candidate.entities)} (iter {iteration}, {n_remaining} pkgs, {pct_pruned:.0f}% pruned)")
             
             iter_info['super_candidate'] = list(super_candidate.entities)
             iter_info['super_candidate_bounds'] = self.package_manager.get_bounds(super_candidate)
@@ -446,7 +448,7 @@ class AQSAlgorithm:
                 metadata['iterations'].append(iter_info)
                 break
             
-            print(f"  Alpha top condition not met")
+            print(f"  Alpha top condition not met -> asking next question")
             iter_info['alpha_top_condition_met'] = False
             
             # Select next question based on mode
