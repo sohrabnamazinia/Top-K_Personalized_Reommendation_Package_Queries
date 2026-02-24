@@ -184,8 +184,15 @@ class LLMEvaluator:
         if self.mock_api:
             val = round(random.uniform(0.0, 1.0), 1)
             lb = ub = val
-            elapsed = time.perf_counter() - t0
-            value = (lb, ub, round(elapsed, 4))
+            # Synthetic time (like MGT) so scalability experiments get sensible process_response time
+            r = random.random()
+            if r < 0.05:
+                elapsed = round(random.uniform(0.25, 0.4), 4)
+            elif r > 0.95:
+                elapsed = round(random.uniform(1.0, 1.2), 4)
+            else:
+                elapsed = round(random.uniform(0.4, 1.0), 4)
+            value = (lb, ub, elapsed)
             if use_cache:
                 self._component_cache[cache_key] = value
             return value

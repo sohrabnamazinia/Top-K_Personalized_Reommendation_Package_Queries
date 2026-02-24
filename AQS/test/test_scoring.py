@@ -57,20 +57,20 @@ def test_scoring():
     print("Computing some component values...")
     
     # Compute 2 relevance values (now returns intervals)
-    rel_e1_lb, rel_e1_ub = scoring_function.probe_question(
+    rel_e1_lb, rel_e1_ub, _ = scoring_function.probe_question(
         components[0], entities, ['e1'], query, use_cache=True
     )
-    rel_e2_lb, rel_e2_ub = scoring_function.probe_question(
+    rel_e2_lb, rel_e2_ub, _ = scoring_function.probe_question(
         components[0], entities, ['e2'], query, use_cache=True
     )
     print(f"  Known - Rel(q, e1): [{rel_e1_lb}, {rel_e1_ub}]")
     print(f"  Known - Rel(q, e2): [{rel_e2_lb}, {rel_e2_ub}]")
     
     # Compute 2 diversity values (now returns intervals)
-    div_e1_e2_lb, div_e1_e2_ub = scoring_function.probe_question(
+    div_e1_e2_lb, div_e1_e2_ub, _ = scoring_function.probe_question(
         components[1], entities, ['e1', 'e2'], query, use_cache=True
     )
-    div_e1_e3_lb, div_e1_e3_ub = scoring_function.probe_question(
+    div_e1_e3_lb, div_e1_e3_ub, _ = scoring_function.probe_question(
         components[1], entities, ['e1', 'e3'], query, use_cache=True
     )
     print(f"  Known - Div(e1, e2): [{div_e1_e2_lb}, {div_e1_e2_ub}]")

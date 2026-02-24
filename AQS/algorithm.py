@@ -2,6 +2,7 @@ from typing import List, Dict, Set, Tuple, Optional
 import sys
 import random
 import math
+import time
 from pathlib import Path
 
 # Add parent directory to path for imports
@@ -29,6 +30,7 @@ class AQSAlgorithm:
         init_dim_1: bool = True,
         is_next_q_random: bool = False,
         heuristic_top_packages_pct: float = 0.1,
+        return_timings: bool = False,
     ):
         """
         Initialize AQS algorithm.
@@ -72,10 +74,19 @@ class AQSAlgorithm:
         
         # Track initial package count for pruning statistics
         self.initial_package_count = len(self.package_manager.get_packages())
-        
+
+        self.return_timings = return_timings
+        self._timings: Optional[Dict[str, float]] = None
+        if return_timings:
+            self._timings = {
+                "time_maintain_packages": 0.0,
+                "time_ask_next_question": 0.0,
+                "time_process_response": 0.0,
+            }
+
         # Preprocessing: Ask all dimension 1 (unary) questions if enabled
         if init_dim_1:
-            self._preprocess_dimension_1()
+            self._preprocess_dimension_1(self._timings)
     
     def _initialize_unknown_questions(self) -> Set[Tuple[str, Tuple[str, ...]]]:
         """Initialize the set of all possible questions."""
@@ -97,7 +108,7 @@ class AQSAlgorithm:
         
         return questions
     
-    def _preprocess_dimension_1(self):
+    def _preprocess_dimension_1(self, timings: Optional[Dict[str, float]] = None):
         """Preprocess by asking all dimension 1 (unary) questions, updating bounds, and pruning packages."""
         # Find all dimension 1 questions
         print("Preprocessing: asking all dimension 1 questions...")
@@ -107,21 +118,27 @@ class AQSAlgorithm:
             component = next(c for c in self.components if c.name == component_name)
             if component.dimension == 1:
                 dim_1_questions.append(question)
+        # If all components are dimension 1, only preprocess one of them
+        if all(c.dimension == 1 for c in self.components) and dim_1_questions:
+            first_component_name = self.components[0].name
+            dim_1_questions = [q for q in dim_1_questions if q[0] == first_component_name]
         # Ask each dimension 1 question
         for question in dim_1_questions:
 
             component, entity_ids = self._question_to_component_entities(question)
-            
-            # Probe the question to get response
-            response = self.scoring_function.probe_question(
+
+            lb, ub, time_taken = self.scoring_function.probe_question(
                 component, self.entities, entity_ids, self.query, use_cache=True
             )
-            # Update bounds for affected packages
-            affected_packages = self.package_manager.update_bounds(component, entity_ids, response)
-            
-            # Prune dominated packages
+            if timings is not None:
+                timings["time_process_response"] += time_taken
+
+            t0 = time.perf_counter()
+            affected_packages = self.package_manager.update_bounds(component, entity_ids, (lb, ub))
             self.package_manager.prune_packages(affected_packages)
-            
+            if timings is not None:
+                timings["time_maintain_packages"] += time.perf_counter() - t0
+
             # Move question from unknown to known
             self.unknown_questions.remove(question)
             self.known_questions.add(question)
@@ -403,9 +420,8 @@ class AQSAlgorithm:
             'questions_asked': 0,
             'final_package': None
         }
-        
         iteration = 0
-        
+
         while self.unknown_questions:
             iteration += 1
             n_unknown = len(self.unknown_questions)
@@ -434,6 +450,7 @@ class AQSAlgorithm:
             iter_info['alpha_top_condition_met'] = False
             
             # Select next question based on mode
+            t0_ask = time.perf_counter()
             if self.is_next_q_random:
                 # Random selection: choose randomly from unknown questions
                 if not self.unknown_questions:
@@ -469,25 +486,33 @@ class AQSAlgorithm:
                     iter_info['stop_reason'] = 'no_questions_available'
                     metadata['iterations'].append(iter_info)
                     break
-                
+
                 best_question = min(heuristic_values.items(), key=lambda x: x[1])[0]
                 iter_info['selected_question'] = str(best_question)
                 iter_info['selection_mode'] = 'heuristic'
-            
-            # Probe LLM for actual response
+            if self._timings is not None:
+                self._timings["time_ask_next_question"] += time.perf_counter() - t0_ask
+
+            # Probe LLM for actual response (returns lb, ub, time_taken; time_taken is API/MGT/mock time)
             component, entity_ids = self._question_to_component_entities(best_question)
-            response = self.scoring_function.probe_question(
+            lb, ub, time_taken = self.scoring_function.probe_question(
                 component, self.entities, entity_ids, self.query, use_cache=True
             )
-            
+            if self._timings is not None:
+                self._timings["time_process_response"] += time_taken
+
+            response = (lb, ub)
             iter_info['response'] = response
             metadata['questions_asked'] += 1
-            
+
             # Update bounds
+            t0_maintain = time.perf_counter()
             affected_packages = self.package_manager.update_bounds(component, entity_ids, response)
-            
+
             # Prune dominated packages
             pruned = self.package_manager.prune_packages(affected_packages)
+            if self._timings is not None:
+                self._timings["time_maintain_packages"] += time.perf_counter() - t0_maintain
             iter_info['affected_packages'] = len(affected_packages)
             iter_info['pruned_packages'] = len(pruned)
             
@@ -525,8 +550,18 @@ class AQSAlgorithm:
         # Calculate total packages pruned (including preprocessing)
         final_package_count = len(self.package_manager.get_packages())
         total_packages_pruned = self.initial_package_count - final_package_count
-        
+
+        if self._timings is not None:
+            metadata["time_maintain_packages"] = self._timings["time_maintain_packages"]
+            metadata["time_ask_next_question"] = self._timings["time_ask_next_question"]
+            metadata["time_process_response"] = self._timings["time_process_response"]
+            metadata["time_total"] = (
+                self._timings["time_maintain_packages"]
+                + self._timings["time_ask_next_question"]
+                + self._timings["time_process_response"]
+            )
+
         # Print number of packages pruned
         print(f"\nNumber of packages pruned: {total_packages_pruned}")
-        
+
         return final_package, metadata

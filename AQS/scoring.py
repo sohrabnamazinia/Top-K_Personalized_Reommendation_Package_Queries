@@ -49,22 +49,21 @@ class ScoringFunction:
         entity_ids: List[str],
         query: str,
         use_cache: bool = True
-    ) -> Tuple[float, float]:
-        """Probe a question (component value) and get interval (lower_bound, upper_bound). Removes from unknown questions when computed."""
+    ) -> Tuple[float, float, float]:
+        """Probe a question (component value) and get (lower_bound, upper_bound, time_taken). Removes from unknown questions when computed."""
         # Initialize unknown questions if not done yet
         if not self._unknown_questions:
             self._initialize_unknown_questions(entities, query)
-        
+
         key = self._get_component_value_key(component, entity_ids, query)
-        # Get value from LLM evaluator (handles its own caching)
-        lb, ub, _ = self.llm_evaluator.evaluate_component(
+        lb, ub, time_taken = self.llm_evaluator.evaluate_component(
             component, entities, entity_ids, query, use_cache
         )
-        
+
         # Remove from unknown questions (mark as answered)
         self._unknown_questions.discard(key)
-        
-        return (lb, ub)
+
+        return (lb, ub, time_taken)
     
     def is_component_value_unknown(
         self,
@@ -120,7 +119,7 @@ class ScoringFunction:
                     
                     if key not in self._unknown_questions:
                         # Known value: get from LLM evaluator (will use its cache)
-                        value_lb, value_ub = self.probe_question(
+                        value_lb, value_ub, _ = self.probe_question(
                             component, entities, [entity_id], query, use_cache
                         )
                         lower_bound += value_lb
@@ -139,7 +138,7 @@ class ScoringFunction:
                         
                         if key not in self._unknown_questions:
                             # Known value: get from LLM evaluator (will use its cache)
-                            value_lb, value_ub = self.probe_question(
+                            value_lb, value_ub, _ = self.probe_question(
                                 component, entities, sorted_pair, query, use_cache
                             )
                             lower_bound += value_lb
