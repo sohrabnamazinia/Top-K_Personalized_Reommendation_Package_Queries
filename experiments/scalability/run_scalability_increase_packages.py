@@ -103,6 +103,10 @@ def main():
             return_timings=True,
         )
         final_package, metadata = algorithm.run()
+        initial_n = metadata.get("initial_package_count", num_packages)
+        final_n = metadata.get("final_package_count", 0)
+        pct = (100.0 * (initial_n - final_n) / initial_n) if initial_n else 0.0
+        print(f"  -> {pct:.1f}% of packages pruned")
 
         rows.append({
             "#packages": num_packages,

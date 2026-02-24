@@ -550,6 +550,9 @@ class AQSAlgorithm:
         # Calculate total packages pruned (including preprocessing)
         final_package_count = len(self.package_manager.get_packages())
         total_packages_pruned = self.initial_package_count - final_package_count
+        pct_pruned = (100.0 * total_packages_pruned / self.initial_package_count) if self.initial_package_count else 0.0
+        metadata["initial_package_count"] = self.initial_package_count
+        metadata["final_package_count"] = final_package_count
 
         if self._timings is not None:
             metadata["time_maintain_packages"] = self._timings["time_maintain_packages"]
@@ -562,6 +565,6 @@ class AQSAlgorithm:
             )
 
         # Print number of packages pruned
-        print(f"\nNumber of packages pruned: {total_packages_pruned}")
+        print(f"\nNumber of packages pruned: {total_packages_pruned} ({pct_pruned:.1f}% of initial)")
 
         return final_package, metadata
