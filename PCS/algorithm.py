@@ -1,5 +1,6 @@
 from typing import Dict, List, Tuple, Optional
 import random
+import time
 import numpy as np
 import sys
 from pathlib import Path
@@ -23,6 +24,7 @@ class PCSAlgorithm:
         epsilon: float = 0.01,
         smart_initial_package: bool = True,
         exceed_number_of_chance: Optional[int] = None,
+        return_timings: bool = False,
     ):
         """
         Initialize PCS algorithm.
@@ -35,6 +37,7 @@ class PCSAlgorithm:
             smart_initial_package: If True, initial package is top-k by unary scores; if False, k entities chosen at random.
             exceed_number_of_chance: When no_beneficial_swap, try next-s-by-TP up to this many times across the run.
                 If None, set at run() to max(1, int(sqrt(n))) where n = number of entities.
+            return_timings: If True, metadata will include time_maintain_packages, time_ask_next_question, time_process_response, time_total.
         """
         self.components = components
         self.scoring_function = ScoringFunction(components, llm_evaluator)
@@ -42,6 +45,7 @@ class PCSAlgorithm:
         self.epsilon = epsilon
         self.smart_initial_package = smart_initial_package
         self.exceed_number_of_chance = exceed_number_of_chance
+        self.return_timings = return_timings
 
     def select_initial_package(
         self,
@@ -87,7 +91,7 @@ class PCSAlgorithm:
         for entity_id, entity in entities.items():
             score = 0.0
             for component in unary_components:
-                lb, ub = self.scoring_function.probe_question(
+                lb, ub, _ = self.scoring_function.probe_question(
                     component, entities, [entity_id], query, use_cache=True
                 )
                 score += (lb + ub) / 2.0
@@ -187,7 +191,8 @@ class PCSAlgorithm:
         exceed_chances_remaining: int,
         e_star: str,
         max_contrib_value: Tuple[float, float],
-        max_contrib_mid: float
+        max_contrib_mid: float,
+        timings: Optional[Dict[str, float]] = None,
     ) -> Tuple[bool, str, Tuple[float, float], int]:
         """If current best is beneficial, return (True, e_star, max_contrib_value, exceed_chances_remaining).
         Else try next-s-by-TP up to exceed_chances_remaining times; return (swap_done, e_star, max_contrib_value, updated_remaining).
@@ -207,9 +212,12 @@ class PCSAlgorithm:
                 hyp = package.copy()
                 hyp.remove(e_minus)
                 hyp.add(candidate_id)
-                exact_next[candidate_id] = self.scoring_function.compute_contribution(
+                lb, ub, t = self.scoring_function.compute_contribution(
                     candidate_id, hyp, entities, query, use_cache=True
                 )
+                exact_next[candidate_id] = (lb, ub)
+                if timings is not None:
+                    timings["time_process_response"] += t
             if exact_next:
                 best = max(exact_next.items(), key=lambda x: _mid(x[1]))
                 e_star, max_contrib_value = best[0], best[1]
@@ -247,13 +255,24 @@ class PCSAlgorithm:
         else:
             package = initial_package.copy()
         
+        timings = None
+        if self.return_timings:
+            timings = {
+                "time_maintain_packages": 0.0,
+                "time_ask_next_question": 0.0,
+                "time_process_response": 0.0,
+            }
+        
         # Ensure we have all necessary component values for initial package
         # Compute contribution scores for all entities in package
         contributions = {}
         for entity_id in package.entities:
-            contributions[entity_id] = self.scoring_function.compute_contribution(
+            lb, ub, t = self.scoring_function.compute_contribution(
                 entity_id, package, entities, query, use_cache=True
             )
+            contributions[entity_id] = (lb, ub)
+            if timings is not None:
+                timings["time_process_response"] += t
         
         # Get external entities
         external_entities = set(entities.keys()) - package.entities
@@ -274,9 +293,12 @@ class PCSAlgorithm:
             iteration += 1
             iter_info = {'iteration': iteration}
 
-            pkg_score = self.scoring_function.compute_package_score(
+            pkg_score_lb, pkg_score_ub, t_pkg = self.scoring_function.compute_package_score(
                 package, entities, query, use_cache=True
             )
+            pkg_score = (pkg_score_lb, pkg_score_ub)
+            if timings is not None:
+                timings["time_process_response"] += t_pkg
             print(f"  Iteration {iteration}: package = {sorted(package.entities)}  total score = {pkg_score}")
 
             # Step 1: Find entity with minimum contribution (e⁻); contributions are (lb, ub)
@@ -294,6 +316,7 @@ class PCSAlgorithm:
             iter_info['e_minus'] = e_minus
             iter_info['delta_min'] = delta_min
             
+            t0_ask = time.perf_counter()
             # Step 2: For each external entity, estimate and compute TP(e)
             tp_scores = {}
             for ext_entity_id in external_entities:
@@ -321,6 +344,8 @@ class PCSAlgorithm:
             # Step 4: Check convergence (max TP < epsilon)
             if not tp_scores or max(tp_scores.values()) < self.epsilon:
                 iter_info['stop_reason'] = 'max_tp_below_epsilon'
+                if timings is not None:
+                    timings["time_ask_next_question"] += time.perf_counter() - t0_ask
                 metadata['iterations'].append(iter_info)
                 break
             
@@ -334,12 +359,17 @@ class PCSAlgorithm:
                 hyp_package.add(candidate_id)
                 
                 # Compute exact contribution
-                exact_contrib = self.scoring_function.compute_contribution(
+                lb, ub, t = self.scoring_function.compute_contribution(
                     candidate_id, hyp_package, entities, query, use_cache=True
                 )
-                exact_contributions[candidate_id] = exact_contrib
+                exact_contributions[candidate_id] = (lb, ub)
+                if timings is not None:
+                    timings["time_process_response"] += t
             
             iter_info['exact_contributions'] = exact_contributions
+            
+            if timings is not None:
+                timings["time_ask_next_question"] += time.perf_counter() - t0_ask
             
             # Step 6: Find best candidate
             if not exact_contributions:
@@ -361,7 +391,8 @@ class PCSAlgorithm:
             # Step 7: Check if swap is beneficial; if not, try next-s by TP up to exceed_number_of_chance times
             swap_done, e_star, max_contrib_value, exceed_chances_remaining = self._try_beneficial_swap_or_exceed(
                 sorted_tp, e_minus, package, entities, query, delta_min_mid, iter_info,
-                exceed_chances_remaining, e_star, max_contrib_value, max_contrib_mid
+                exceed_chances_remaining, e_star, max_contrib_value, max_contrib_mid,
+                timings,
             )
             if not swap_done:
                 iter_info['stop_reason'] = 'no_beneficial_swap'
@@ -375,9 +406,12 @@ class PCSAlgorithm:
             # Recompute contributions for all entities in package (they may have changed due to binary components)
             contributions = {}
             for entity_id in package.entities:
-                contributions[entity_id] = self.scoring_function.compute_contribution(
+                lb, ub, t = self.scoring_function.compute_contribution(
                     entity_id, package, entities, query, use_cache=True
                 )
+                contributions[entity_id] = (lb, ub)
+                if timings is not None:
+                    timings["time_process_response"] += t
 
             # Update external entities
             external_entities.remove(e_star)
@@ -388,11 +422,23 @@ class PCSAlgorithm:
             metadata['iterations'].append(iter_info)
         
         # Compute final score
-        final_score = self.scoring_function.compute_package_score(
+        final_lb, final_ub, t_final = self.scoring_function.compute_package_score(
             package, entities, query, use_cache=True
         )
+        final_score = (final_lb, final_ub)
+        if timings is not None:
+            timings["time_process_response"] += t_final
         metadata['final_score'] = final_score
         metadata['final_package'] = list(package.entities)
+        if timings is not None:
+            metadata["time_maintain_packages"] = timings["time_maintain_packages"]
+            metadata["time_ask_next_question"] = timings["time_ask_next_question"]
+            metadata["time_process_response"] = timings["time_process_response"]
+            metadata["time_total"] = (
+                timings["time_maintain_packages"]
+                + timings["time_ask_next_question"]
+                + timings["time_process_response"]
+            )
         print(f"  Done: package = {sorted(package.entities)}  total score = {final_score}")
 
         return package, metadata

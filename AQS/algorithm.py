@@ -29,7 +29,7 @@ class AQSAlgorithm:
         print_log: bool = False,
         init_dim_1: bool = True,
         is_next_q_random: bool = False,
-        heuristic_top_packages_pct: float = 0.1,
+        heuristic_top_packages_pct: float = 0.05,
         return_timings: bool = False,
     ):
         """
@@ -46,7 +46,7 @@ class AQSAlgorithm:
             print_log: If True, print detailed logs for each iteration
             init_dim_1: If True, preprocess by asking all dimension 1 (unary) questions and updating bounds
             is_next_q_random: If True, randomly select next question instead of using heuristic evaluation
-            heuristic_top_packages_pct: Only compute heuristic for questions that affect the top x%% of packages by lower bound (default 0.1).
+            heuristic_top_packages_pct: Only compute heuristic for questions that affect the top x%% of packages by lower bound (default 0.05).
         """
         self.entities = entities
         self.components = components
@@ -453,6 +453,7 @@ class AQSAlgorithm:
             
             # Select next question based on mode
             t0_ask = time.perf_counter()
+            print(f"  Selecting next question...")
             if self.is_next_q_random:
                 # Random selection: choose randomly from unknown questions
                 if not self.unknown_questions:
@@ -479,6 +480,7 @@ class AQSAlgorithm:
                 questions_to_eval = self.unknown_questions & questions_affecting_top
                 if not questions_to_eval:
                     questions_to_eval = self.unknown_questions
+                print(f"  Evaluating heuristic on {len(questions_to_eval)} questions (top {top_n}/{n_pkg} packages)...")
                 if self.print_log:
                     print(f"  Heuristic: evaluating {len(questions_to_eval)} questions (top {top_n}/{n_pkg} packages)")
                 heuristic_values = {q: self.heuristic_evaluation(q) for q in questions_to_eval}
@@ -492,14 +494,17 @@ class AQSAlgorithm:
                 best_question = min(heuristic_values.items(), key=lambda x: x[1])[0]
                 iter_info['selected_question'] = str(best_question)
                 iter_info['selection_mode'] = 'heuristic'
+                print(f"  Selected question: {best_question}")
             if self._timings is not None:
                 self._timings["time_ask_next_question"] += time.perf_counter() - t0_ask
 
             # Probe LLM for actual response (returns lb, ub, time_taken; time_taken is API/MGT/mock time)
             component, entity_ids = self._question_to_component_entities(best_question)
+            print(f"  Probing LLM for response...")
             lb, ub, time_taken = self.scoring_function.probe_question(
                 component, self.entities, entity_ids, self.query, use_cache=True
             )
+            print(f"  Got response (lb={lb:.2f}, ub={ub:.2f}), updating bounds...")
             if self._timings is not None:
                 self._timings["time_process_response"] += time_taken
 
@@ -513,6 +518,8 @@ class AQSAlgorithm:
 
             # Prune dominated packages
             pruned = self.package_manager.prune_packages(affected_packages)
+            n_remaining = len(self.package_manager.get_packages())
+            print(f"  Pruned {len(pruned)} packages, {n_remaining} remaining")
             if self._timings is not None:
                 self._timings["time_maintain_packages"] += time.perf_counter() - t0_maintain
             iter_info['affected_packages'] = len(affected_packages)

@@ -69,7 +69,7 @@ class ExactBaseline:
 
         scored = []
         for pkg in packages:
-            lb, ub = self.scoring.compute_package_score(
+            lb, ub, _ = self.scoring.compute_package_score(
                 pkg, entities, query, use_cache=True
             )
             scored.append((pkg, _score_midpoint((lb, ub))))

@@ -50,9 +50,10 @@ def test_scoring(n, k, package, entities, components=None, query="Find products 
     print()
 
     # Compute package score
-    total_score = scoring_function.compute_package_score(
+    total_lb, total_ub, _ = scoring_function.compute_package_score(
         package, entities, query, use_cache=True
     )
+    total_score = (total_lb, total_ub)
 
     print(f"Result:")
     print(f"  Total Package Score: {total_score}")
@@ -61,9 +62,10 @@ def test_scoring(n, k, package, entities, components=None, query="Find products 
     # Show contribution of each entity
     print("Entity Contributions:")
     for entity_id in package.entities:
-        contrib = scoring_function.compute_contribution(
+        lb, ub, _ = scoring_function.compute_contribution(
             entity_id, package, entities, query, use_cache=True
         )
+        contrib = (lb, ub)
         print(f"  {entity_id}: {contrib}")
     print()
 
@@ -73,17 +75,19 @@ def test_scoring(n, k, package, entities, components=None, query="Find products 
     for component in components:
         if component.dimension == 1:
             for entity_id in entity_list:
-                value = scoring_function.probe_question(
+                lb, ub, _ = scoring_function.probe_question(
                     component, entities, [entity_id], query, use_cache=True
                 )
+                value = (lb, ub)
                 print(f"  {component.name}({entity_id}): {value}")
         elif component.dimension == 2:
             for i in range(len(entity_list)):
                 for j in range(i + 1, len(entity_list)):
                     pair = [entity_list[i], entity_list[j]]
-                    value = scoring_function.probe_question(
+                    lb, ub, _ = scoring_function.probe_question(
                         component, entities, pair, query, use_cache=True
                     )
+                    value = (lb, ub)
                     print(f"  {component.name}({entity_list[i]}, {entity_list[j]}): {value}")
     print()
 

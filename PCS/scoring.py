@@ -61,12 +61,12 @@ class ScoringFunction:
         entity_ids: List[str],
         query: str,
         use_cache: bool = True
-    ) -> Tuple[float, float]:
-        """Probe a question (component value). Returns (lower_bound, upper_bound) interval."""
-        lb, ub, _ = self.llm_evaluator.evaluate_component(
+    ) -> Tuple[float, float, float]:
+        """Probe a question (component value). Returns (lower_bound, upper_bound, time_taken)."""
+        lb, ub, time_taken = self.llm_evaluator.evaluate_component(
             component, entities, entity_ids, query, use_cache
         )
-        return (lb, ub)
+        return (lb, ub, time_taken)
     
     def compute_package_score(
         self,
@@ -74,36 +74,39 @@ class ScoringFunction:
         entities: Dict[str, Entity],
         query: str,
         use_cache: bool = True
-    ) -> Tuple[float, float]:
+    ) -> Tuple[float, float, float]:
         """
         Compute total score of a package as an interval [total_lb, total_ub].
         Each component value is (lb, ub); intervals are summed.
         
         Returns:
-            (total_lower_bound, total_upper_bound)
+            (total_lower_bound, total_upper_bound, time_taken)
         """
         total_lb = 0.0
         total_ub = 0.0
+        time_taken = 0.0
         entity_list = list(package.entities)
         
         for component in self.components:
             if component.dimension == 1:
                 for entity_id in entity_list:
-                    lb, ub = self.probe_question(
+                    lb, ub, t = self.probe_question(
                         component, entities, [entity_id], query, use_cache
                     )
                     total_lb += lb
                     total_ub += ub
+                    time_taken += t
             elif component.dimension == 2:
                 for i in range(len(entity_list)):
                     for j in range(i + 1, len(entity_list)):
-                        lb, ub = self.probe_question(
+                        lb, ub, t = self.probe_question(
                             component, entities, [entity_list[i], entity_list[j]], query, use_cache
                         )
                         total_lb += lb
                         total_ub += ub
+                        time_taken += t
         
-        return (total_lb, total_ub)
+        return (total_lb, total_ub, time_taken)
     
     def compute_contribution(
         self,
@@ -112,35 +115,38 @@ class ScoringFunction:
         entities: Dict[str, Entity],
         query: str,
         use_cache: bool = True
-    ) -> Tuple[float, float]:
+    ) -> Tuple[float, float, float]:
         """
         Compute contribution of an entity in a package as an interval [lb, ub].
         Contribution = sum of all component value intervals involving this entity.
         
         Returns:
-            (contribution_lower_bound, contribution_upper_bound)
+            (contribution_lower_bound, contribution_upper_bound, time_taken)
         """
         contrib_lb = 0.0
         contrib_ub = 0.0
+        time_taken = 0.0
         entity_list = list(package.entities)
         
         for component in self.components:
             if component.dimension == 1:
                 if entity_id in package.entities:
-                    lb, ub = self.probe_question(
+                    lb, ub, t = self.probe_question(
                         component, entities, [entity_id], query, use_cache
                     )
                     contrib_lb += lb
                     contrib_ub += ub
+                    time_taken += t
             elif component.dimension == 2:
                 for other_id in entity_list:
                     if other_id != entity_id:
                         sorted_pair = sorted([entity_id, other_id])
-                        lb, ub = self.probe_question(
+                        lb, ub, t = self.probe_question(
                             component, entities, sorted_pair, query, use_cache
                         )
                         contrib_lb += lb
                         contrib_ub += ub
+                        time_taken += t
         
-        return (contrib_lb, contrib_ub)
+        return (contrib_lb, contrib_ub, time_taken)
 
