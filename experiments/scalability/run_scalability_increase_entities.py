@@ -23,9 +23,9 @@ from AQS.algorithm import AQSAlgorithm
 from PCS.algorithm import PCSAlgorithm
 
 # With --synthetic: scale to 1M+ (no CSV). Without: limited by CSV size (~20–30k).
-ENTITY_COUNTS_SYNTHETIC = [100000]
+ENTITY_COUNTS_SYNTHETIC = [50]
 ENTITY_COUNTS_CSV = [1000, 5000, 10000, 15000, 20000]  # typical real-data sizes
-FIXED_K = 10
+FIXED_K = 3
 ALPHA = 0.8
 
 

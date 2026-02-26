@@ -9,3 +9,5 @@ mgt_Results/
 data/*
 .DS_STORE
 scalability_outputs/*
+experiments_outputs/*
+plot/scalability/*.png
