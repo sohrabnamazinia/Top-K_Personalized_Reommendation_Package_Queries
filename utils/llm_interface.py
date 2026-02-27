@@ -13,6 +13,10 @@ if TYPE_CHECKING:
     from preprocessing.MGT import MGT
 
 
+class BudgetExceededError(RuntimeError):
+    """Raised when a budget-limited run attempts to exceed its evaluation budget."""
+
+
 class LLMEvaluator:
     """Interface for evaluating component values using LLM or materialized ground truth (MGT)."""
 
@@ -67,6 +71,34 @@ class LLMEvaluator:
                 temperature=0
             )
         self._component_cache: Dict[str, Tuple[float, float, float]] = {}
+        # Counts "new" evaluations (cache misses) across evaluate_component calls.
+        # This approximates number of distinct questions answered.
+        self._component_evals_count: int = 0
+        # Optional budget limiting (disabled by default).
+        self._budget_enabled: bool = False
+        self._budget_limit: Optional[int] = None
+
+    def reset_component_evals_count(self) -> None:
+        self._component_evals_count = 0
+
+    def get_component_evals_count(self) -> int:
+        return int(self._component_evals_count)
+
+    def set_budget_limit(self, enabled: bool, budget: Optional[int]) -> None:
+        """
+        Enable/disable budget limiting. Budget counts cache-miss component evaluations.
+        If enabled is True, budget must be a non-negative int.
+        """
+        self._budget_enabled = bool(enabled)
+        if self._budget_enabled:
+            if budget is None:
+                raise ValueError("Budget limiting enabled but budget is None")
+            b = int(budget)
+            if b < 0:
+                raise ValueError("Budget must be non-negative")
+            self._budget_limit = b
+        else:
+            self._budget_limit = None
     
     def _get_cache_key(self, component: Component, entity_ids: List[str], query: str) -> str:
         """Generate cache key for component value."""
@@ -150,10 +182,20 @@ class LLMEvaluator:
         cache_key = self._get_cache_key(component, entity_ids, query)
         if use_cache and cache_key in self._component_cache:
             return self._component_cache[cache_key]
+
+        # Cache miss => would require a new evaluation. Enforce budget if enabled.
+        if self._budget_enabled and self._budget_limit is not None:
+            if self._component_evals_count >= self._budget_limit:
+                raise BudgetExceededError(
+                    f"Budget exceeded: used={self._component_evals_count} limit={self._budget_limit}"
+                )
+
         if self.use_MGT and self._mgt is not None:
             value = self._evaluate_component_mgt(component, entity_ids, use_cache, cache_key)
         else:
             value = self._evaluate_component_llm(component, entities, entity_ids, query, use_cache, cache_key)
+        # Only increment on cache miss (we're here only on cache miss).
+        self._component_evals_count += 1
         return value
 
     def _evaluate_component_mgt(

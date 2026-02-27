@@ -22,7 +22,7 @@ ALPHA = 0.8
 QUERY = "Find products with good quality"
 MOCK_API = True           # True = no API key; False = use OpenAI
 PRINT_LOG = True
-IS_NEXT_Q_RANDOM = False
+SELECTION_STRATEGY = "aqs"
 HEURISTIC_TOP_PACKAGES_PCT = 0.01  # Set to None to disable heuristic pruning of top packages after each iteration
 # -----------------------------------------------------------
 
@@ -47,7 +47,7 @@ def test_algorithm():
         llm_evaluator=llm_evaluator,
         initial_packages=None,
         print_log=PRINT_LOG,
-        is_next_q_random=IS_NEXT_Q_RANDOM,
+        selection_strategy=SELECTION_STRATEGY,
         heuristic_top_packages_pct=HEURISTIC_TOP_PACKAGES_PCT
     )
     print("=" * 60)

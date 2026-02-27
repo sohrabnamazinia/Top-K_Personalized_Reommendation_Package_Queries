@@ -145,7 +145,6 @@ def main():
                 initial_packages=initial_packages,
                 print_log=False,
                 init_dim_1=True,
-                is_next_q_random=False,
                 return_timings=True,
             )
             _, metadata = algorithm.run()

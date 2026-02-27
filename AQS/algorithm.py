@@ -1,9 +1,10 @@
-from typing import List, Dict, Set, Tuple, Optional
+from typing import List, Dict, Set, Tuple, Optional, Union
 import sys
 import random
 import math
 import time
 from pathlib import Path
+from enum import Enum
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -11,7 +12,14 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.models import Package, Component, Entity
 from AQS.package_manager import PackageManager
 from AQS.scoring import ScoringFunction
-from utils.llm_interface import LLMEvaluator
+from utils.llm_interface import LLMEvaluator, BudgetExceededError
+
+
+class QuestionSelectionStrategy(str, Enum):
+    HEURISTIC = "aqs"
+    RANDOM = "random"
+    GREEDY_TIGHT = "greedy_tight"
+    GREEDY_LOOSE = "greedy_loose"
 
 
 class AQSAlgorithm:
@@ -28,9 +36,11 @@ class AQSAlgorithm:
         initial_packages: Optional[List[Package]] = None,
         print_log: bool = False,
         init_dim_1: bool = True,
-        is_next_q_random: bool = False,
+        selection_strategy: Union[QuestionSelectionStrategy, str] = QuestionSelectionStrategy.HEURISTIC,
         heuristic_top_packages_pct: float = 0.05,
         return_timings: bool = False,
+        enable_budget_limit: bool = False,
+        budget: Optional[int] = None,
     ):
         """
         Initialize AQS algorithm.
@@ -45,7 +55,7 @@ class AQSAlgorithm:
             initial_packages: Optional initial set of packages (if None, uses all possible packages)
             print_log: If True, print detailed logs for each iteration
             init_dim_1: If True, preprocess by asking all dimension 1 (unary) questions and updating bounds
-            is_next_q_random: If True, randomly select next question instead of using heuristic evaluation
+            selection_strategy: Question selection strategy: 'aqs' (heuristic), 'random', or 'greedy'
             heuristic_top_packages_pct: Only compute heuristic for questions that affect the top x%% of packages by lower bound (default 0.05).
         """
         self.entities = entities
@@ -55,9 +65,34 @@ class AQSAlgorithm:
         self.query = query
         self.llm_evaluator = llm_evaluator
         self.print_log = print_log
-        self.is_next_q_random = is_next_q_random
+        if isinstance(selection_strategy, str):
+            selection_strategy_norm = selection_strategy.strip().lower()
+            if selection_strategy_norm in ("aqs", "heuristic"):
+                self.selection_strategy = QuestionSelectionStrategy.HEURISTIC
+            elif selection_strategy_norm in ("random",):
+                self.selection_strategy = QuestionSelectionStrategy.RANDOM
+            elif selection_strategy_norm in ("greedy", "greedy_tight"):
+                # Backward-compatible alias: "greedy" == "greedy_tight"
+                self.selection_strategy = QuestionSelectionStrategy.GREEDY_TIGHT
+            elif selection_strategy_norm in ("greedy_loose",):
+                self.selection_strategy = QuestionSelectionStrategy.GREEDY_LOOSE
+            else:
+                raise ValueError(f"Unknown selection_strategy: {selection_strategy}")
+        else:
+            self.selection_strategy = selection_strategy
         self.heuristic_top_packages_pct = heuristic_top_packages_pct
         self.scoring_function = ScoringFunction(components, llm_evaluator, entities, query)
+        self.enable_budget_limit = bool(enable_budget_limit)
+        self.budget = int(budget) if budget is not None else None
+        if self.enable_budget_limit and self.budget is None:
+            raise ValueError("enable_budget_limit is True but budget is None")
+        if self.enable_budget_limit and self.budget is not None and self.budget < 0:
+            raise ValueError("budget must be non-negative")
+
+        # Budget limiting and eval count should be per-run; AQS does preprocessing in __init__.
+        if self.enable_budget_limit:
+            self.llm_evaluator.reset_component_evals_count()
+            self.llm_evaluator.set_budget_limit(True, self.budget)
         
         # Initialize package manager
         entity_ids = list(entities.keys())
@@ -87,6 +122,28 @@ class AQSAlgorithm:
         # Preprocessing: Ask all dimension 1 (unary) questions if enabled
         if init_dim_1:
             self._preprocess_dimension_1(self._timings)
+
+    def _select_greedy_question(self, tight: bool) -> Optional[Tuple[str, Tuple[str, ...]]]:
+        """Greedy strategy: pick package with tightest/loosest bounds and choose a random unknown question that affects it."""
+        packages = self.package_manager.get_packages()
+        if not packages:
+            return None
+        # Tightest bounds = minimum width (ub - lb); loosest = maximum width
+        best_pkg = None
+        best_width = float("inf") if tight else float("-inf")
+        for pkg in packages:
+            lb, ub = self.package_manager.get_bounds(pkg)
+            w = ub - lb
+            if (tight and w < best_width) or ((not tight) and w > best_width):
+                best_width = w
+                best_pkg = pkg
+        if best_pkg is None:
+            return None
+        questions_for_pkg = self.package_manager._get_questions_for_package(best_pkg)
+        candidates = list(self.unknown_questions & questions_for_pkg)
+        if not candidates:
+            return None
+        return random.choice(candidates)
     
     def _initialize_unknown_questions(self) -> Set[Tuple[str, Tuple[str, ...]]]:
         """Initialize the set of all possible questions."""
@@ -124,12 +181,20 @@ class AQSAlgorithm:
             dim_1_questions = [q for q in dim_1_questions if q[0] == first_component_name]
         # Ask each dimension 1 question
         for question in dim_1_questions:
+            if self.enable_budget_limit and self.budget is not None:
+                if self.llm_evaluator.get_component_evals_count() >= self.budget:
+                    print("Preprocessing stopped: budget exhausted.")
+                    break
 
             component, entity_ids = self._question_to_component_entities(question)
 
-            lb, ub, time_taken = self.scoring_function.probe_question(
-                component, self.entities, entity_ids, self.query, use_cache=True
-            )
+            try:
+                lb, ub, time_taken = self.scoring_function.probe_question(
+                    component, self.entities, entity_ids, self.query, use_cache=True
+                )
+            except BudgetExceededError:
+                print("Preprocessing stopped: budget exhausted.")
+                break
             if timings is not None:
                 timings["time_process_response"] += time_taken
 
@@ -415,141 +480,142 @@ class AQSAlgorithm:
         
         Algorithm 1: AQS main algorithm
         """
-        metadata = {
-            'iterations': [],
-            'questions_asked': 0,
-            'final_package': None
-        }
-        iteration = 0
+        metadata = {"iterations": [], "questions_asked": 0, "final_package": None}
 
-        while self.unknown_questions:
-            iteration += 1
-            n_unknown = len(self.unknown_questions)
-            if self.print_log:
-                print(f"  Iteration {iteration} (unknown questions: {n_unknown})...")
-            iter_info = {'iteration': iteration}
-            
-            # Identify current super-candidate
-            super_candidate = self.identify_current_super_candidate()
-            if super_candidate is None:
-                break
-
-            n_remaining = len(self.package_manager.get_packages())
-            pct_pruned = (100.0 * (self.initial_package_count - n_remaining) / self.initial_package_count) if self.initial_package_count else 0.0
-            print(f"  Super candidate: {list(super_candidate.entities)} (iter {iteration}, {n_remaining} pkgs, {pct_pruned:.0f}% pruned)")
-            
-            iter_info['super_candidate'] = list(super_candidate.entities)
-            iter_info['super_candidate_bounds'] = self.package_manager.get_bounds(super_candidate)
-            
-            # Check if super-candidate is alpha-top
-            if self.package_manager.check_alpha_top_package(super_candidate, self.alpha):
-                iter_info['alpha_top_condition_met'] = True
-                iter_info['stop_reason'] = 'alpha_top_condition_met'
-                metadata['iterations'].append(iter_info)
-                break
-            
-            print(f"  Alpha top condition not met -> asking next question")
-            iter_info['alpha_top_condition_met'] = False
-            
-            # Select next question based on mode
-            t0_ask = time.perf_counter()
-            print(f"  Selecting next question...")
-            if self.is_next_q_random:
-                # Random selection: choose randomly from unknown questions
-                if not self.unknown_questions:
-                    iter_info['stop_reason'] = 'no_questions_available'
-                    metadata['iterations'].append(iter_info)
-                    break
-                best_question = random.choice(list(self.unknown_questions))
-                iter_info['selected_question'] = str(best_question)
-                iter_info['selection_mode'] = 'random'
-            else:
-                # Heuristic-based selection: only evaluate heuristic for questions affecting top x% packages (by lower bound)
-                packages = self.package_manager.get_packages()
-                n_pkg = len(packages)
-                top_n = max(1, math.ceil(self.heuristic_top_packages_pct * n_pkg))
-                sorted_by_lb = sorted(
-                    packages,
-                    key=lambda p: self.package_manager.get_bounds(p)[0],
-                    reverse=True,
-                )
-                top_packages = sorted_by_lb[:top_n]
-                questions_affecting_top = set()
-                for pkg in top_packages:
-                    questions_affecting_top |= self.package_manager._get_questions_for_package(pkg)
-                questions_to_eval = self.unknown_questions & questions_affecting_top
-                if not questions_to_eval:
-                    questions_to_eval = self.unknown_questions
-                print(f"  Evaluating heuristic on {len(questions_to_eval)} questions (top {top_n}/{n_pkg} packages)...")
+        try:
+            iteration = 0
+            while self.unknown_questions:
+                iteration += 1
+                n_unknown = len(self.unknown_questions)
                 if self.print_log:
-                    print(f"  Heuristic: evaluating {len(questions_to_eval)} questions (top {top_n}/{n_pkg} packages)")
-                heuristic_values = {q: self.heuristic_evaluation(q) for q in questions_to_eval}
-                iter_info['heuristic_values'] = {str(q): v for q, v in heuristic_values.items()}
-                # Select question with minimum heuristic
-                if not heuristic_values:
-                    iter_info['stop_reason'] = 'no_questions_available'
-                    metadata['iterations'].append(iter_info)
+                    print(f"  Iteration {iteration} (unknown questions: {n_unknown})...")
+                iter_info = {"iteration": iteration}
+
+                # Identify current super-candidate
+                super_candidate = self.identify_current_super_candidate()
+                if super_candidate is None:
+                    iter_info["stop_reason"] = "no_packages"
+                    metadata["iterations"].append(iter_info)
                     break
 
-                best_question = min(heuristic_values.items(), key=lambda x: x[1])[0]
-                iter_info['selected_question'] = str(best_question)
-                iter_info['selection_mode'] = 'heuristic'
-                print(f"  Selected question: {best_question}")
-            if self._timings is not None:
-                self._timings["time_ask_next_question"] += time.perf_counter() - t0_ask
+                n_remaining = len(self.package_manager.get_packages())
+                pct_pruned = (
+                    (100.0 * (self.initial_package_count - n_remaining) / self.initial_package_count)
+                    if self.initial_package_count
+                    else 0.0
+                )
+                print(
+                    f"  Super candidate: {list(super_candidate.entities)} "
+                    f"(iter {iteration}, {n_remaining} pkgs, {pct_pruned:.0f}% pruned)"
+                )
 
-            # Probe LLM for actual response (returns lb, ub, time_taken; time_taken is API/MGT/mock time)
-            component, entity_ids = self._question_to_component_entities(best_question)
-            print(f"  Probing LLM for response...")
-            lb, ub, time_taken = self.scoring_function.probe_question(
-                component, self.entities, entity_ids, self.query, use_cache=True
-            )
-            print(f"  Got response (lb={lb:.2f}, ub={ub:.2f}), updating bounds...")
-            if self._timings is not None:
-                self._timings["time_process_response"] += time_taken
+                iter_info["super_candidate"] = list(super_candidate.entities)
+                iter_info["super_candidate_bounds"] = self.package_manager.get_bounds(super_candidate)
 
-            response = (lb, ub)
-            iter_info['response'] = response
-            metadata['questions_asked'] += 1
+                # Check if super-candidate is alpha-top
+                if self.package_manager.check_alpha_top_package(super_candidate, self.alpha):
+                    iter_info["alpha_top_condition_met"] = True
+                    iter_info["stop_reason"] = "alpha_top_condition_met"
+                    metadata["iterations"].append(iter_info)
+                    break
 
-            # Update bounds
-            t0_maintain = time.perf_counter()
-            affected_packages = self.package_manager.update_bounds(component, entity_ids, response)
+                print("  Alpha top condition not met -> asking next question")
+                iter_info["alpha_top_condition_met"] = False
 
-            # Prune dominated packages
-            pruned = self.package_manager.prune_packages(affected_packages)
-            n_remaining = len(self.package_manager.get_packages())
-            print(f"  Pruned {len(pruned)} packages, {n_remaining} remaining")
-            if self._timings is not None:
-                self._timings["time_maintain_packages"] += time.perf_counter() - t0_maintain
-            iter_info['affected_packages'] = len(affected_packages)
-            iter_info['pruned_packages'] = len(pruned)
-            
-            # Print log if enabled
-            if self.print_log:
-                print("=" * 60)
-                print(f"Iteration {iteration}")
-                print("=" * 60)
-                print("\nPackages with bounds:")
-                for pkg in self.package_manager.get_packages():
-                    lb, ub = self.package_manager.get_bounds(pkg)
-                    print(f"  Package {list(pkg.entities)}: bounds=({lb:.2f}, {ub:.2f})")
-                print(f"\nSelected question: {best_question}")
-                print(f"Response: {response}")
-                if pruned:
-                    print(f"\nPruned packages ({len(pruned)}):")
-                    for pkg in pruned:
-                        print(f"  {list(pkg.entities)}")
+                # Select next question based on strategy
+                t0_ask = time.perf_counter()
+                print("  Selecting next question...")
+                if not self.unknown_questions:
+                    iter_info["stop_reason"] = "no_questions_available"
+                    metadata["iterations"].append(iter_info)
+                    break
+
+                if self.selection_strategy == QuestionSelectionStrategy.RANDOM:
+                    best_question = random.choice(list(self.unknown_questions))
+                    iter_info["selected_question"] = str(best_question)
+                    iter_info["selection_mode"] = "random"
+                elif self.selection_strategy == QuestionSelectionStrategy.GREEDY_TIGHT:
+                    best_question = self._select_greedy_question(tight=True) or random.choice(list(self.unknown_questions))
+                    iter_info["selected_question"] = str(best_question)
+                    iter_info["selection_mode"] = "greedy_tight"
+                elif self.selection_strategy == QuestionSelectionStrategy.GREEDY_LOOSE:
+                    best_question = self._select_greedy_question(tight=False) or random.choice(list(self.unknown_questions))
+                    iter_info["selected_question"] = str(best_question)
+                    iter_info["selection_mode"] = "greedy_loose"
                 else:
-                    print("\nNo packages pruned in this iteration")
-                print()
-            
-            # Move question from unknown to known
-            self.unknown_questions.remove(best_question)
-            self.known_questions.add(best_question)
-            
-            iter_info['remaining_unknown_questions'] = len(self.unknown_questions)
-            metadata['iterations'].append(iter_info)
+                    # HEURISTIC (AQS): only evaluate heuristic for questions affecting top x% packages (by lower bound)
+                    packages = self.package_manager.get_packages()
+                    n_pkg = len(packages)
+                    top_n = max(1, math.ceil(self.heuristic_top_packages_pct * n_pkg))
+                    sorted_by_lb = sorted(
+                        packages,
+                        key=lambda p: self.package_manager.get_bounds(p)[0],
+                        reverse=True,
+                    )
+                    top_packages = sorted_by_lb[:top_n]
+                    questions_affecting_top = set()
+                    for pkg in top_packages:
+                        questions_affecting_top |= self.package_manager._get_questions_for_package(pkg)
+                    questions_to_eval = self.unknown_questions & questions_affecting_top
+                    if not questions_to_eval:
+                        questions_to_eval = self.unknown_questions
+                    print(f"  Evaluating heuristic on {len(questions_to_eval)} questions (top {top_n}/{n_pkg} packages)...")
+                    if self.print_log:
+                        print(f"  Heuristic: evaluating {len(questions_to_eval)} questions (top {top_n}/{n_pkg} packages)")
+                    heuristic_values = {q: self.heuristic_evaluation(q) for q in questions_to_eval}
+                    iter_info["heuristic_values"] = {str(q): v for q, v in heuristic_values.items()}
+                    if not heuristic_values:
+                        iter_info["stop_reason"] = "no_questions_available"
+                        metadata["iterations"].append(iter_info)
+                        break
+                    best_question = min(heuristic_values.items(), key=lambda x: x[1])[0]
+                    iter_info["selected_question"] = str(best_question)
+                    iter_info["selection_mode"] = "heuristic"
+                    print(f"  Selected question: {best_question}")
+
+                if self._timings is not None:
+                    self._timings["time_ask_next_question"] += time.perf_counter() - t0_ask
+
+                # Probe for actual response
+                component, entity_ids = self._question_to_component_entities(best_question)
+                print("  Probing LLM for response...")
+                try:
+                    lb, ub, time_taken = self.scoring_function.probe_question(
+                        component, self.entities, entity_ids, self.query, use_cache=True
+                    )
+                except BudgetExceededError:
+                    iter_info["stop_reason"] = "budget_exhausted"
+                    metadata["iterations"].append(iter_info)
+                    break
+
+                print(f"  Got response (lb={lb:.2f}, ub={ub:.2f}), updating bounds...")
+                if self._timings is not None:
+                    self._timings["time_process_response"] += time_taken
+
+                response = (lb, ub)
+                iter_info["response"] = response
+                metadata["questions_asked"] += 1
+
+                # Update bounds + prune
+                t0_maintain = time.perf_counter()
+                affected_packages = self.package_manager.update_bounds(component, entity_ids, response)
+                pruned = self.package_manager.prune_packages(affected_packages)
+                n_remaining = len(self.package_manager.get_packages())
+                print(f"  Pruned {len(pruned)} packages, {n_remaining} remaining")
+                if self._timings is not None:
+                    self._timings["time_maintain_packages"] += time.perf_counter() - t0_maintain
+                iter_info["affected_packages"] = len(affected_packages)
+                iter_info["pruned_packages"] = len(pruned)
+
+                # Move question from unknown to known
+                self.unknown_questions.remove(best_question)
+                self.known_questions.add(best_question)
+
+                iter_info["remaining_unknown_questions"] = len(self.unknown_questions)
+                metadata["iterations"].append(iter_info)
+        finally:
+            if self.enable_budget_limit:
+                self.llm_evaluator.set_budget_limit(False, None)
         
         # Get final super-candidate
         final_package = self.identify_current_super_candidate()
