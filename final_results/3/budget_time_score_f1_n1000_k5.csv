@@ -1,0 +1,6 @@
+budget,pcs_total_time_s,random_approx_total_time_s,pcs_package_score,random_approx_package_score
+100,3.75,3.15,7.90,7.70
+1000,5.05,4.25,8.60,7.79
+5000,8.34,5.75,9.30,8.25
+10000,13.35,8.35,12.55,8.48
+50000,21.55,13.10,13.85,9.15
