@@ -1,7 +1,7 @@
 from typing import Dict, List, Tuple, Optional
 import random
 import time
-import numpy as np
+import math
 import sys
 from pathlib import Path
 
@@ -23,6 +23,7 @@ class PCSAlgorithm:
         budget_rate: int = 5,
         epsilon: float = 0.01,
         smart_initial_package: bool = True,
+        swap_strategy: str = "tail_prob",
         exceed_number_of_chance: Optional[int] = None,
         return_timings: bool = False,
         enable_budget_limit: bool = False,
@@ -37,6 +38,9 @@ class PCSAlgorithm:
             budget_rate: Number of top candidates to evaluate exactly (s)
             epsilon: Convergence threshold
             smart_initial_package: If True, initial package is top-k by unary scores; if False, k entities chosen at random.
+            swap_strategy:
+                - "tail_prob" (default): original PCS behavior (rank outside entities by tail-probability heuristic).
+                - "random": Random_Approx behavior (sample outside entities uniformly at random; swap with a random in-package entity).
             exceed_number_of_chance: When no_beneficial_swap, try next-s-by-TP up to this many times across the run.
                 If None, set at run() to max(1, int(sqrt(n))) where n = number of entities.
             return_timings: If True, metadata will include time_maintain_packages, time_ask_next_question, time_process_response, time_total.
@@ -46,10 +50,13 @@ class PCSAlgorithm:
         self.budget_rate = budget_rate
         self.epsilon = epsilon
         self.smart_initial_package = smart_initial_package
+        self.swap_strategy = str(swap_strategy or "tail_prob").strip().lower()
         self.exceed_number_of_chance = exceed_number_of_chance
         self.return_timings = return_timings
         self.enable_budget_limit = bool(enable_budget_limit)
         self.budget = int(budget) if budget is not None else None
+        if self.swap_strategy not in ("tail_prob", "random"):
+            raise ValueError(f"Unknown swap_strategy: {swap_strategy!r}. Use 'tail_prob' or 'random'.")
         if self.enable_budget_limit and self.budget is None:
             raise ValueError("enable_budget_limit is True but budget is None")
         if self.enable_budget_limit and self.budget is not None and self.budget < 0:
@@ -301,7 +308,7 @@ class PCSAlgorithm:
             # Default exceed_number_of_chance from n if not set (scale with sqrt(n))
             if self.exceed_number_of_chance is None:
                 n = len(entities)
-                self.exceed_number_of_chance = max(1, int(np.sqrt(n)))
+                self.exceed_number_of_chance = max(1, int(math.sqrt(n)))
 
             iteration = 0
             exceed_chances_remaining = self.exceed_number_of_chance
@@ -328,15 +335,19 @@ class PCSAlgorithm:
                     timings["time_process_response"] += t_pkg
                 print(f"  Iteration {iteration}: package = {sorted(package.entities)}  total score = {pkg_score}")
 
-                # Step 1: Find entity with minimum contribution
+                # Step 1: Choose entity to remove
                 if not contributions:
                     iter_info["stop_reason"] = "no_contributions"
                     metadata["iterations"].append(iter_info)
                     break
 
-                min_entity = min(contributions.items(), key=lambda x: _midpoint(x[1]))
-                e_minus = min_entity[0]
-                delta_min = min_entity[1]
+                if self.swap_strategy == "random":
+                    e_minus = random.choice(list(package.entities))
+                    delta_min = contributions[e_minus]
+                else:
+                    min_entity = min(contributions.items(), key=lambda x: _midpoint(x[1]))
+                    e_minus = min_entity[0]
+                    delta_min = min_entity[1]
                 delta_min_mid = _midpoint(delta_min)
 
                 iter_info["e_minus"] = e_minus
@@ -344,32 +355,47 @@ class PCSAlgorithm:
 
                 t0_ask = time.perf_counter()
 
-                # Step 2: compute TP scores
-                tp_scores = {}
-                for ext_entity_id in external_entities:
-                    E_X, Var_X = self.estimate_contribution_stats(
-                        ext_entity_id, package, entities, query, e_minus
-                    )
-                    denom = (E_X - delta_min_mid) ** 2
-                    if denom > 0:
-                        tp = abs(1 - (Var_X / denom))
-                    else:
-                        tp = 0.0
-                    tp_scores[ext_entity_id] = tp
-
-                # Step 3: select top-s candidates
-                sorted_tp = sorted(tp_scores.items(), key=lambda x: x[1], reverse=True)
-                top_s_candidates = [eid for eid, _ in sorted_tp[: self.budget_rate]]
-                iter_info["top_s_candidates"] = top_s_candidates
-                iter_info["max_tp"] = max(tp_scores.values()) if tp_scores else 0.0
-
-                # Step 4: convergence
-                if not tp_scores or max(tp_scores.values()) < self.epsilon:
-                    iter_info["stop_reason"] = "max_tp_below_epsilon"
+                # Step 2-4: select candidates (tail-prob heuristic vs random sampling)
+                if not external_entities:
+                    iter_info["stop_reason"] = "no_external_entities"
                     if timings is not None:
                         timings["time_ask_next_question"] += time.perf_counter() - t0_ask
                     metadata["iterations"].append(iter_info)
                     break
+
+                if self.swap_strategy == "random":
+                    ext_list = list(external_entities)
+                    random.shuffle(ext_list)
+                    sorted_tp = [(eid, 1.0) for eid in ext_list]  # placeholder ordering for exceed-logic
+                    top_s_candidates = [eid for eid, _ in sorted_tp[: self.budget_rate]]
+                    iter_info["top_s_candidates"] = top_s_candidates
+                    iter_info["max_tp"] = 1.0
+                else:
+                    # Tail-probability heuristic (original PCS)
+                    tp_scores = {}
+                    for ext_entity_id in external_entities:
+                        E_X, Var_X = self.estimate_contribution_stats(
+                            ext_entity_id, package, entities, query, e_minus
+                        )
+                        denom = (E_X - delta_min_mid) ** 2
+                        if denom > 0:
+                            tp = abs(1 - (Var_X / denom))
+                        else:
+                            tp = 0.0
+                        tp_scores[ext_entity_id] = tp
+
+                    sorted_tp = sorted(tp_scores.items(), key=lambda x: x[1], reverse=True)
+                    top_s_candidates = [eid for eid, _ in sorted_tp[: self.budget_rate]]
+                    iter_info["top_s_candidates"] = top_s_candidates
+                    iter_info["max_tp"] = max(tp_scores.values()) if tp_scores else 0.0
+
+                    # Convergence (tail-prob only)
+                    if not tp_scores or max(tp_scores.values()) < self.epsilon:
+                        iter_info["stop_reason"] = "max_tp_below_epsilon"
+                        if timings is not None:
+                            timings["time_ask_next_question"] += time.perf_counter() - t0_ask
+                        metadata["iterations"].append(iter_info)
+                        break
 
                 # Step 5: exact contribution for top-s candidates
                 exact_contributions = {}
