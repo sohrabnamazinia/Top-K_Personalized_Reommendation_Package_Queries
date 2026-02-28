@@ -1,0 +1,7 @@
+method,gpt-4o-mini,gpt-4o
+AQS,97,99
+GreedyLoose,120,122
+PCS,125,124
+Random,150,155
+GreedyTight,152,150
+ExactBaseline,230,230
