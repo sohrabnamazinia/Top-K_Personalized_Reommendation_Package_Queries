@@ -74,7 +74,7 @@ def _plot_time(budgets, pcs_time, rnd_time) -> None:
         linestyle="--",
         marker="s",
         linewidth=1.6,
-        label="Random_Approx",
+        label="RandomApprox",
     )
 
     ax.set_xticks(x)
@@ -101,7 +101,7 @@ def _plot_score(budgets, pcs_score, rnd_score) -> None:
         linestyle="--",
         marker="s",
         linewidth=1.6,
-        label="Random_Approx",
+        label="RandomApprox",
     )
 
     ax.set_xticks(x)

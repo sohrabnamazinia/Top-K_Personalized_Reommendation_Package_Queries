@@ -3,7 +3,7 @@ Final Results - Section 2:
 Two stacked bar charts showing why AQS is not scalable.
 
 Charts:
-- Scalability - increasing #entities
+- Scalability - increasing #items
 - Scalability - increasing k
 
 Input CSVs (generated for paper-quality figures):
@@ -199,7 +199,7 @@ def _plot_stacked_grouped(
         )
 
     ax.set_xticks(x)
-    if x_label == "#entities":
+    if x_label == "#items":
         ax.set_xticklabels([f"{v:,}" for v in x_values])
     else:
         ax.set_xticklabels([str(v) for v in x_values])
@@ -235,8 +235,8 @@ def main() -> None:
     _plot_stacked_grouped(
         x_values=entities,
         by_key=by_key_e,
-        x_label="#entities",
-        title="Scalability - increasing #entities",
+        x_label="#items",
+        title="Scalability - increasing #items",
         out_path=OUT_DIR / "scalability_increase_entities.png",
     )
 

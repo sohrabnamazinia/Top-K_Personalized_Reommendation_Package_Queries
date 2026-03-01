@@ -1,0 +1,5 @@
+query,resp1,resp2,resp3,resp4,resp5,resp6,resp7,resp8,resp9,resp10
+Find a quiet cafe with good wifi.,0.7,0.7,0.6,0.6,0.7,0.8,0.6,0.8,0.8,0.5
+Recommend a budget-friendly Italian restaurant.,0.3,0.3,0.4,0.3,0.6,0.6,0.4,0.4,0.6,0.6
+Pick a scenic hiking trail for a weekend trip.,0.7,0.8,0.7,0.4,0.7,0.6,0.5,0.6,0.4,0.5
+Choose a family-friendly hotel near downtown.,0.3,0.7,0.7,0.6,0.5,0.3,0.4,0.4,0.6,0.5

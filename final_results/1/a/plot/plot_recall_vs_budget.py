@@ -22,7 +22,12 @@ PLOT_DIR = Path(__file__).resolve().parent
 
 CSV_TEMPLATE = "recall_vs_budget_{scoring}_k3_alpha0p5.csv"
 SCORINGS = [f"f{i}" for i in range(1, 7)]
-METHODS = ["AQS", "GreedyLoose", "GreedyTight", "Random", "PCS", "ExactBaseline"]
+# Advisor feedback: omit ExactBaseline from final plots (still allowed in CSV).
+METHODS = ["AQS", "GreedyLoose", "GreedyTight", "Random", "PCS"]
+
+# Map raw budget values to "% of ExactBaseline probing" for the paper axis.
+# (We intentionally cap at 70% so the last point doesn't imply full exact probing.)
+BUDGET_TO_PERCENT = {50: 10, 100: 25, 200: 40, 300: 55, 500: 70}
 
 
 def _read_csv(path: Path) -> Tuple[List[int], Dict[str, List[float]]]:
@@ -64,7 +69,6 @@ BARSTYLE = {
     "GreedyTight": ("#f0f0f0", "--"),
     "Random": ("#f7f7f7", ".."),
     "PCS": ("#969696", "\\\\"),
-    "ExactBaseline": ("#4d4d4d", "oo"),
 }
 
 
@@ -92,7 +96,8 @@ def _plot_one_bar(scoring: str) -> None:
     csv_path = ROOT / CSV_TEMPLATE.format(scoring=scoring)
     budgets, series = _read_csv(csv_path)
 
-    fig, ax = plt.subplots(figsize=(6.8, 3.6))
+    # Slightly taller aspect ratio for readability in paper layouts
+    fig, ax = plt.subplots(figsize=(6.8, 4.3))
 
     n_methods = len(METHODS)
     bar_w = 0.82 / n_methods
@@ -113,11 +118,12 @@ def _plot_one_bar(scoring: str) -> None:
         )
 
     ax.set_ylim(-0.02, 1.02)
-    ax.set_xlabel("Budget (#probes)")
+    ax.set_xlabel("Budget (% of ExactBaseline)")
     ax.set_ylabel("Recall")
-    ax.set_title("Recall - increasing Budget")
+    f_idx = scoring[1:] if scoring.lower().startswith("f") else scoring
+    ax.set_title(rf"Recall - increasing Budget - $\mathcal{{F}}_{{{f_idx}}}$")
     ax.set_xticks(x)
-    ax.set_xticklabels([str(b) for b in budgets])
+    ax.set_xticklabels([f"{BUDGET_TO_PERCENT.get(b, b)}%" for b in budgets])
     _add_legend_below(ax)
 
     out_path = PLOT_DIR / f"recall_vs_budget_{scoring}_bar.png"
